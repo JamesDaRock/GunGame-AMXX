@@ -1,11 +1,11 @@
 /* Uncomment the below define to use SQL stats intead of flat-file stats. */
 
-//#define SQL
+#define SQL
 
 /* Uncomment the below define to have a player's timestamp get refreshed right away as soon as they join, instead of only when they play to the end of a game.
 ** There is a slight overhead for flat-file stats, but it's fairly speedy. When using SQL stats, you might as well uncomment this -- it'll be speedy. */
 
-//#define REFRESH_TIMESTAMP_ON_JOIN
+#define REFRESH_TIMESTAMP_ON_JOIN
 
 // Thanks a lot to 3volution for helping me iron out some
 // bugs and for giving me some helpful suggestions.
