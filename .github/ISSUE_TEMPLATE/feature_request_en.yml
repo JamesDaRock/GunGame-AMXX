@@ -1,0 +1,33 @@
+name: Feature Request (EN)
+description: Submit a feature request.
+labels:
+- enhancement
+body:
+- type: markdown
+  attributes:
+    value: Remove passwords, tokens, private addresses and personal information before
+      posting. Use Discussions for installation and configuration help.
+- type: input
+  id: version
+  attributes:
+    label: GunGame version
+  validations:
+    required: true
+- type: textarea
+  id: problem
+  attributes:
+    label: Problem or use case
+  validations:
+    required: true
+- type: textarea
+  id: proposal
+  attributes:
+    label: Proposed feature
+  validations:
+    required: true
+- type: textarea
+  id: alternatives
+  attributes:
+    label: Alternatives
+  validations:
+    required: false

@@ -1,0 +1,76 @@
+name: SQL / Database Issue (EN)
+description: Submit a sql / database issue.
+labels:
+- sql
+body:
+- type: markdown
+  attributes:
+    value: Remove passwords, tokens, private addresses and personal information before
+      posting. Use Discussions for installation and configuration help.
+- type: input
+  id: version
+  attributes:
+    label: GunGame version
+  validations:
+    required: true
+- type: dropdown
+  id: game
+  attributes:
+    label: Game
+    options:
+    - Counter-Strike 1.6
+    - Condition Zero
+  validations:
+    required: true
+- type: textarea
+  id: environment
+  attributes:
+    label: Environment (AMX Mod X, engine, GameDLL, relevant plugins)
+  validations:
+    required: true
+- type: dropdown
+  id: backend
+  attributes:
+    label: Statistics backend
+    options:
+    - Local
+    - SQL
+    - Unknown / not applicable
+  validations:
+    required: true
+- type: input
+  id: database
+  attributes:
+    label: Database version (if SQL is used)
+  validations:
+    required: true
+- type: textarea
+  id: sql_context
+  attributes:
+    label: Affected SQL operation and sanitized error message
+  validations:
+    required: true
+- type: textarea
+  id: steps
+  attributes:
+    label: Steps to reproduce
+  validations:
+    required: true
+- type: textarea
+  id: expected
+  attributes:
+    label: Expected behavior
+  validations:
+    required: true
+- type: textarea
+  id: actual
+  attributes:
+    label: Actual behavior
+  validations:
+    required: true
+- type: textarea
+  id: logs
+  attributes:
+    label: Sanitized logs and diagnostics
+  validations:
+    required: false

@@ -1,0 +1,33 @@
+name: Dokumentationsproblem (DE)
+description: Dokumentationsproblem melden.
+labels:
+- documentation
+body:
+- type: markdown
+  attributes:
+    value: Entferne Passwörter, Tokens, private Adressen und personenbezogene Daten.
+      Nutze Discussions für Installations- und Konfigurationshilfe.
+- type: input
+  id: version
+  attributes:
+    label: GunGame-Version
+  validations:
+    required: true
+- type: input
+  id: location
+  attributes:
+    label: Dokument, Abschnitt oder URL
+  validations:
+    required: true
+- type: textarea
+  id: problem
+  attributes:
+    label: Falsche oder fehlende Informationen
+  validations:
+    required: true
+- type: textarea
+  id: proposal
+  attributes:
+    label: Korrekturvorschlag
+  validations:
+    required: false

@@ -1,0 +1,6 @@
+blank_issues_enabled: false
+contact_links:
+- name: Support / Hilfe (Discussions)
+  url: https://github.com/JamesDaRock/GunGame-AMXX/discussions
+  about: Installation, configuration and general questions / Installation, Konfiguration
+    und allgemeine Fragen.

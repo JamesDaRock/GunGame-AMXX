@@ -1,0 +1,76 @@
+name: SQL- / Datenbankproblem (DE)
+description: SQL- / Datenbankproblem melden.
+labels:
+- sql
+body:
+- type: markdown
+  attributes:
+    value: Entferne Passwörter, Tokens, private Adressen und personenbezogene Daten.
+      Nutze Discussions für Installations- und Konfigurationshilfe.
+- type: input
+  id: version
+  attributes:
+    label: GunGame-Version
+  validations:
+    required: true
+- type: dropdown
+  id: game
+  attributes:
+    label: Spiel
+    options:
+    - Counter-Strike 1.6
+    - Condition Zero
+  validations:
+    required: true
+- type: textarea
+  id: environment
+  attributes:
+    label: Umgebung (AMX Mod X, Engine, GameDLL, relevante Plugins)
+  validations:
+    required: true
+- type: dropdown
+  id: backend
+  attributes:
+    label: Statistik-Backend
+    options:
+    - Local
+    - SQL
+    - Unbekannt / nicht relevant
+  validations:
+    required: true
+- type: input
+  id: database
+  attributes:
+    label: Datenbankversion (bei SQL-Nutzung)
+  validations:
+    required: true
+- type: textarea
+  id: sql_context
+  attributes:
+    label: Betroffener SQL-Vorgang und bereinigte Fehlermeldung
+  validations:
+    required: true
+- type: textarea
+  id: steps
+  attributes:
+    label: Schritte zur Reproduktion
+  validations:
+    required: true
+- type: textarea
+  id: expected
+  attributes:
+    label: Erwartetes Verhalten
+  validations:
+    required: true
+- type: textarea
+  id: actual
+  attributes:
+    label: Tatsächliches Verhalten
+  validations:
+    required: true
+- type: textarea
+  id: logs
+  attributes:
+    label: Bereinigte Logs und Diagnosedaten
+  validations:
+    required: false

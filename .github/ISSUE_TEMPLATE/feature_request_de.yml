@@ -1,0 +1,33 @@
+name: Funktionswunsch (DE)
+description: Funktionswunsch melden.
+labels:
+- enhancement
+body:
+- type: markdown
+  attributes:
+    value: Entferne Passwörter, Tokens, private Adressen und personenbezogene Daten.
+      Nutze Discussions für Installations- und Konfigurationshilfe.
+- type: input
+  id: version
+  attributes:
+    label: GunGame-Version
+  validations:
+    required: true
+- type: textarea
+  id: problem
+  attributes:
+    label: Problem oder Anwendungsfall
+  validations:
+    required: true
+- type: textarea
+  id: proposal
+  attributes:
+    label: Vorgeschlagene Funktion
+  validations:
+    required: true
+- type: textarea
+  id: alternatives
+  attributes:
+    label: Alternativen
+  validations:
+    required: false

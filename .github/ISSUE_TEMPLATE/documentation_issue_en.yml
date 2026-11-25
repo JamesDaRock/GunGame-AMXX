@@ -1,0 +1,33 @@
+name: Documentation Issue (EN)
+description: Submit a documentation issue.
+labels:
+- documentation
+body:
+- type: markdown
+  attributes:
+    value: Remove passwords, tokens, private addresses and personal information before
+      posting. Use Discussions for installation and configuration help.
+- type: input
+  id: version
+  attributes:
+    label: GunGame version
+  validations:
+    required: true
+- type: input
+  id: location
+  attributes:
+    label: Document, section or URL
+  validations:
+    required: true
+- type: textarea
+  id: problem
+  attributes:
+    label: Incorrect or missing information
+  validations:
+    required: true
+- type: textarea
+  id: proposal
+  attributes:
+    label: Suggested correction
+  validations:
+    required: false
