@@ -1,0 +1,38 @@
+# Local secrets and environment files
+.env
+.env.*
+!.env.example
+*.local.php
+*.local.cfg
+# Runtime data and logs
+*.log
+*.tmp
+*.bak
+*.swp
+# OS / IDE files
+Thumbs.db
+Desktop.ini
+.DS_Store
+.vscode/
+.idea/
+# Local build output
+/build/
+/dist/
+
+# Private configuration and generated runtime data
+/web/config.php
+/web/cache/*
+!/web/cache/.htaccess
+/addons/amxmodx/data/gungame/*
+!/addons/amxmodx/data/gungame/.gitkeep
+/addons/amxmodx/scripting/compiled/
+*.amxx
+*.suo
+*.user
+*.obj
+*.o
+*.pdb
+*.old
+*.sql.gz
+.vs/
+

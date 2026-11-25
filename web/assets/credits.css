@@ -1,0 +1,9 @@
+/* Credits page: shared dashboard palette, independent responsive layout. */
+.credits-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; margin-bottom:20px; }
+.credits-grid .panel { margin:0; }
+.credits-feature { border-left:3px solid var(--gold); }
+.credits-feature h2 { margin-top:8px; }
+.credits-feature a,.credits-grid a,.credits-original a { color:var(--gold); overflow-wrap:anywhere; }
+.credits-original h3 { font-size:15px; margin-top:20px; }
+.credits-original p,.credits-grid p,.credits-feature p { line-height:1.7; overflow-wrap:anywhere; }
+@media(max-width:650px) { .credits-grid { grid-template-columns:1fr; } }

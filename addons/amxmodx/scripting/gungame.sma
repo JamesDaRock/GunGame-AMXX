@@ -1,40 +1,52 @@
-/* Uncomment the below define to use SQL stats intead of flat-file stats. */
-
-//#define SQL
-
-/* Uncomment the below define to have a player's timestamp get refreshed right away as soon as they join, instead of only when they play to the end of a game.
-** There is a slight overhead for flat-file stats, but it's fairly speedy. When using SQL stats, you might as well uncomment this -- it'll be speedy. */
-
-//#define REFRESH_TIMESTAMP_ON_JOIN
-
-// Thanks a lot to 3volution for helping me iron out some
-// bugs and for giving me some helpful suggestions.
+// ============================================================================
+// GunGame AMXX - pur3gaming Edition
+// ============================================================================
+// Original Project : GunGame AMXX
+// Original Author  : Avalanche
+// Original Version : 2.13c
+// Maintainer       : Pascal 'JamesDaRock' Neumann
+// Development      : pur3gaming
+// GitHub           : https://github.com/JamesDaRock/GunGame-AMXX
 //
-// Thanks a lot to raa for helping me pinpoint the crash,
-// and discovering the respawn bug.
+// Independent continuation of GunGame AMXX 2.13c, not an official Avalanche
+// release. The goal is to preserve gameplay while improving compatibility,
+// stability, performance, maintainability and database functionality.
 //
-// Thanks a lot to BAILOPAN for binary logging, and for
-// CSDM spawn files that I could leech off of. Oh, and
-// also AMXX, etcetera.
+// Development targets: AMX Mod X 1.10, ReHLDS, ReGameDLL, YaPB fake SteamID
+// support, MySQL/MariaDB optimization and improved statistics.
+// ============================================================================
+// ORIGINAL PROJECT CREDITS
+// ============================================================================
+// Avalanche - original development and maintenance.
+// 3volution - bug fixes, testing and development suggestions.
+// raa - crash investigation and respawn bug discovery.
+// BAILOPAN - binary logging, CSDM spawn files and AMX Mod X.
+// VEN - FakeMeta Utilities.
+// SeNz0r - additional GunGame sounds.
 //
-// Thanks to VEN for Fakemeta Utilities to ease development.
-//
-// Thanks a lot to all of my supporters, but especially:
+// Community Supporters:
 // 3volution, aligind4h0us3, arkshine, bmp, Curryking,
 // Gunny, IdiotSavant, Mordekay, polakpolak, raa, Silver
 // Dragon, Smileypt, Tomek Kalkowski, ToT | V!PER, and Vm|Mayhem.
 //
-// Thanks especially to all of the translators:
+// Translation Contributors:
 // arkshine, b!orn, commonbullet, Curryking, Deviance,
 // D o o m, eD., e-N-z, Fr3ak0ut, godlike, harbu, iggy_bus,
 // jopmako, jozzz, KylixMynxAltoLAG, MeRcyLeZZ, Min2liz,
 // Mordekay, Morpheus759, rpm, SAMURAI16, Simbad, TEG,
-// ToT | V!PER, trawiator, Twilight Suzuka, webpsiho, and
-// others that I surely forgot (sorry!).
+// ToT | V!PER, trawiator, Twilight Suzuka, webpsiho.
 //
-// Thanks to SeNz0r for many of the new sounds!
-//
-// If I missed you, please yell at me.
+// Special thanks to all other original contributors and supporters.
+// ============================================================================
+// PUR3GAMING EDITION CREDITS
+// ============================================================================
+// Pascal 'JamesDaRock' Neumann (pur3gaming) - project maintainer.
+// Thanks to the developers and contributors of AMX Mod X, Metamod,
+// ReHLDS, ReGameDLL and YaPB.
+// All original copyright notices and applicable license terms are retained.
+// ============================================================================
+
+// Both statistics backends are compiled into this plugin.
 
 #pragma dynamic 8192 // just a little bit extra, not too much
 
@@ -45,8 +57,31 @@
 #include <cstrike>
 #include <hamsandwich>
 
-// defines to be left alone
-new const GG_VERSION[] =	"2.13c";
+// pur3gaming: YaPB fake auth IDs observed through FakeMeta.
+// No separate bridge module required.
+#define GG_YAPB_MAX_CLIENTS 32
+new gg_yapb_userid[GG_YAPB_MAX_CLIENTS + 1];
+new gg_yapb_authid[GG_YAPB_MAX_CLIENTS + 1][32];
+new gg_yapb_fake_cvar;
+new gg_yapb_pending[GG_YAPB_MAX_CLIENTS + 1];
+
+
+// ============================================================================
+// PLUGIN INFORMATION
+// ============================================================================
+
+new const GG_NAME[]             = "GunGame AMXX";
+new const GG_VERSION[]          = "3.0.0-rc3";
+new const GG_AUTHOR[]           = "JamesDaRock";
+new const GG_MAINTAINER[]       = "Pascal 'JamesDaRock' Neumann";
+new const GG_ORIGINAL_AUTHOR[]  = "Avalanche";
+new const GG_ORIGINAL_VERSION[] = "2.13c";
+new const GG_EDITION[]          = "pur3gaming Edition";
+new const GG_URL[]              = "https://github.com/JamesDaRock/GunGame-AMXX";
+
+// ============================================================================
+// INTERNAL DEFINITIONS
+// ============================================================================
 #define LANG_PLAYER_C		-76 // for gungame_print (arbitrary number)
 #define TNAME_SAVE		pev_noise3 // for blocking game_player_equip and player_weaponstrip
 #define WINSOUNDS_SIZE		(MAX_WINSOUNDS*MAX_WINSOUND_LEN)+1 // for gg_sound_winner
@@ -133,12 +168,24 @@ enum
 #define TASK_CHECK_JOINCLASS		1500
 #define TASK_AUTOVOTE_RESULT		1600
 #define TASK_GET_TOP_PLAYERS		1700
+#define TASK_YAPB_AUTH 1800
+#define TASK_HANDICAP_DELAY 1900
+#define TASK_SQL_RECONNECT 2000
 
 //**********************************************************************
 // VARIABLE DEFINITIONS
 //**********************************************************************
 
 // pcvar holders
+// Runtime debug controls.
+new gg_debug_handicap_fault;
+new gg_debug_handicap_delay;
+new gg_sql_init_generation;
+new bool:gg_sql_probe_pending;
+new bool:gg_sql_init_pending;
+new gg_handicap_delay_generation[33];
+new gg_debug, gg_debug_sql, gg_debug_stats, gg_debug_ranking, gg_debug_handicap, gg_debug_spawn, gg_debug_motd, gg_debug_cache;
+
 new gg_enabled, gg_ff_auto, gg_vote_setting, gg_map_setup, gg_join_msg,
 gg_weapon_order, gg_max_lvl, gg_triple_on, gg_turbo, gg_knife_pro,
 gg_worldspawn_suicide, gg_handicap_on, gg_top10_handicap, gg_warmup_timer_setting,
@@ -202,6 +249,51 @@ bot_quota, spareName[32], sqlInit, galileoID = -1;
 // stats file stuff
 new sfStatsStruct[statsData], lastStatsMode = -909;
 
+enum GGStatsState
+{
+    GG_STATS_UNLOADED = 0,
+    GG_STATS_LOADING,
+    GG_STATS_READY,
+    GG_STATS_FAILED
+};
+new GGStatsState:gg_sql_load_state[33], gg_sql_load_generation[33];
+new gg_sql_load_auth[33][32];
+// Deferred first-spawn handicap decisions are bound to a connection and match.
+new gg_handicap_pending[33], gg_handicap_userid[33], gg_handicap_generation[33];
+new gg_handicap_spawn_serial[33], gg_handicap_match[33], gg_handicap_retry[33];
+new gg_handicap_auth[33][32];
+new gg_top_generation[33], gg_top_rows[33], gg_top_pages[33], gg_top_streak[33];
+new gg_top_champ_name[33][32], gg_top_champ_auth[33][32];
+
+// Match-end snapshot for the future threaded save pipeline.
+enum GGSavePlayer
+{
+    ggSaveSlot,
+    ggSaveUserid,
+    ggSaveAuthid[32],
+    ggSaveName[32],
+    ggSaveTeam[10],
+    ggSavePoints,
+    ggSaveWins
+};
+new gg_sql_save_players[32][GGSavePlayer];
+new gg_sql_save_count, gg_sql_save_time, gg_sql_save_mode, gg_sql_save_index;
+new gg_sql_save_winner, gg_sql_save_teamplay;
+new gg_sql_save_pending, gg_sql_save_generation;
+new Float:gg_debug_save_start, gg_debug_save_reads, gg_debug_save_writes;
+new gg_sql_streak_queries[8][1536], gg_sql_streak_count, gg_sql_streak_cursor;
+new gg_sql_stats_found[32], gg_sql_stats_cursor;
+new gg_sql_save_record, gg_sql_save_record_exists, gg_sql_save_streaks[32];
+new gg_sql_finish_loser, gg_sql_finish_restart, Float:gg_sql_finish_chattime;
+new gg_sql_finish_winner_userid, gg_sql_finish_loser_userid;
+new gg_sql_finish_userids[33], gg_sql_finish_authids[33][32];
+new gg_win_sql_pending, gg_win_sql_generation, gg_win_sql_timestamp, gg_winner_motd_history;
+new Float:gg_match_started_at = -1.0;
+new gg_match_duration = -1;
+new gg_win_sql_insert[24576], gg_win_sql_url[64], gg_win_sql_name[32];
+new gg_win_sql_userids[33], gg_win_sql_authids[33][32];
+
+
 // event ids
 new gmsgSayText, gmsgCurWeapon, gmsgStatusIcon, gmsgBombDrop, gmsgBombPickup, gmsgHideWeapon,
 gmsgCrosshair, gmsgScenario;
@@ -212,7 +304,6 @@ page[33], lastKilled[33], hosties[33][2], silenced[33], respawn_timeleft[33], Fl
 spawnSounds[33], spawnProtected[33], statsPosition[33][2], Float:teamTimes[33][2], pointsExtraction[33][5],
 Float:spawnOrigin[33][3], Float:spawnAngles[33][3], afkCheck[33], playerStats[33][statsData];
 
-#if defined SQL
 	#include <sqlx>
 	
 	// flags for the "flags" field in the gg_sql_winmotd table
@@ -222,25 +313,151 @@ Float:spawnOrigin[33][3], Float:spawnAngles[33][3], afkCheck[33], playerStats[33
 	#define NEWRECORD	8
 
 	new gg_sql_host, gg_sql_user, gg_sql_pass, gg_sql_db, gg_sql_table, gg_sql_streak_table, gg_sql_winmotd_table,
-	sqlTable[128], sqlStreakTable[128], sqlPlayersTable[128], serverip[64], Handle:tuple, Handle:db, Handle:query, safeName[64], mkQuery[1536];
-#else
+	sqlTable[128], sqlStreakTable[128], sqlPlayersTable[128], serverip[64], Handle:tuple, Handle:db, mkQuery[1536];
 	new gg_stats_file, gg_stats_streak_file;
 
-	new sfFile[64], sfLineData[112], sfAuthid[32], sfTimestamp[12], Array:statsArray, Array:statsPointers[2], statsSize[2];
-#endif
+	new sfFile[256], sfLineData[112], sfAuthid[32], sfTimestamp[12], Array:statsArray, Array:statsPointers[2], statsSize[2];
+new gg_stats_backend, gg_stats_refresh_on_join;
+new gg_streak_path[256];
+new gg_backend = -1; // Locked after initial configuration.
+new bool:gg_sql_missing;
 
 //**********************************************************************
 // INITIATION FUNCTIONS
 //**********************************************************************
 
 // plugin load
+
+// ============================================================================
+// PLUGIN LIFECYCLE AND OPTIONAL MODULE INTEGRATION
+// ============================================================================
+
+/**
+ * Handle plugin natives processing.
+ */
+public plugin_natives()
+{
+	set_module_filter("gg_module_filter");
+	set_native_filter("gg_native_filter");
+}
+
+/**
+ * Allow optional SQL-related modules to be absent.
+ */
+public gg_module_filter(const module[])
+{
+	if (equali(module, "sqlx") || equali(module, "mysql") || equali(module, "sqlite")) return PLUGIN_HANDLED;
+	return PLUGIN_CONTINUE;
+}
+
+/**
+ * Allow missing SQL natives during loading and mark SQL support as unavailable.
+ */
+public gg_native_filter(const name[], index, trap)
+{
+	if (!trap && equali(name, "SQL_", 4))
+	{
+		gg_sql_missing = true;
+		return PLUGIN_HANDLED;
+	}
+	return PLUGIN_CONTINUE;
+}
+
+/**
+ * Evaluate the timestamp refresh policy against the active statistics backend.
+ */
+stock bool:gg_refresh_on_join()
+{
+	new mode = get_pcvar_num(gg_stats_refresh_on_join);
+	return mode == 1 || (mode == 2 && gg_backend == 1);
+}
+/**
+ * Write project metadata to the AMX Mod X log.
+ */
+stock gg_log_project_info()
+{
+	log_amx("%s - %s", GG_NAME, GG_EDITION);
+	log_amx("Version:          %s", GG_VERSION);
+	log_amx("Developer:        %s", GG_AUTHOR);
+	log_amx("Maintainer:       %s", GG_MAINTAINER);
+	log_amx("Original Author:  %s", GG_ORIGINAL_AUTHOR);
+	log_amx("Original Version: %s", GG_ORIGINAL_VERSION);
+	log_amx("Website:          %s", GG_URL);
+}
+
+/**
+ * Print project metadata to the server console.
+ */
+public gg_info()
+{
+	server_print("========================================");
+	server_print(" %s - %s", GG_NAME, GG_EDITION);
+	server_print(" Version:          %s", GG_VERSION);
+	server_print(" Developer:        %s", GG_AUTHOR);
+	server_print(" Maintainer:       %s", GG_MAINTAINER);
+	server_print(" Original Author:  %s", GG_ORIGINAL_AUTHOR);
+	server_print(" Original Version: %s", GG_ORIGINAL_VERSION);
+	server_print(" Website:          %s", GG_URL);
+	server_print("========================================");
+	return PLUGIN_HANDLED;
+}
+
+// Read-only runtime snapshot; never requests statistics from SQL.
+/**
+ * Print a read-only runtime snapshot to the server console without querying SQL.
+ */
+public gg_status()
+{
+    new leading, name[32], cache[12];
+    for(new id=1;id<=maxPlayers;id++)
+        if(is_user_connected(id) && level[id] > leading) leading = level[id];
+    server_print("[GG-STATUS] iteration=%i stats_mode=%i teamplay=%i leading=%i backend=%i",mapIteration,get_pcvar_num(gg_stats_mode),get_pcvar_num(gg_teamplay),leading,gg_backend);
+    for(new id=1;id<=maxPlayers;id++)
+    {
+        if(!is_user_connected(id)) continue;
+        get_user_name(id,name,31);
+        switch(gg_sql_load_state[id])
+        {
+            case GG_STATS_LOADING: copy(cache,11,"LOADING");
+            case GG_STATS_READY: copy(cache,11,"READY");
+            case GG_STATS_FAILED: copy(cache,11,"FAILED");
+            default: copy(cache,11,"UNLOADED");
+        }
+        server_print("[GG-STATUS] slot=%i userid=%i name=^"%s^" level=%i weapon=%s solo=%i team=%i cache=%s pending=%i gen=%i spawn=%i",id,get_user_userid(id),name,level[id],lvlWeapon[id],statsPosition[id][0],statsPosition[id][1],cache,gg_handicap_pending[id],gg_sql_load_generation[id],gg_handicap_spawn_serial[id]);
+    }
+    return PLUGIN_HANDLED;
+}
+
+// SQL is the umbrella category for existing SQL diagnostics.
+/**
+ * Check global, SQL and category-specific diagnostic thresholds.
+ */
+stock bool:gg_debug_active(category, level)
+{
+    return (get_pcvar_num(gg_debug) >= level || get_pcvar_num(gg_debug_sql) >= level || get_pcvar_num(category) >= level);
+}
+
+new gg_api_sv_restartround, gg_api_mp_chattime, gg_api_mp_winlimit, gg_api_mp_maxrounds, gg_api_mp_timelimit;
+
+/**
+ * Register plugin commands, hooks, events and runtime configuration.
+ */
 public plugin_init()
 {
-	register_plugin("GunGame AMXX",GG_VERSION,"Avalanche");
-	register_cvar("gg_version",GG_VERSION,FCVAR_SERVER);
-	set_cvar_string("gg_version",GG_VERSION);
+	gg_api_sv_restartround = get_cvar_pointer("sv_restartround");
+	gg_api_mp_chattime = get_cvar_pointer("mp_chattime");
+	gg_api_mp_winlimit = get_cvar_pointer("mp_winlimit");
+	gg_api_mp_maxrounds = get_cvar_pointer("mp_maxrounds");
+	gg_api_mp_timelimit = get_cvar_pointer("mp_timelimit");
 
-	// mehrsprachige unterstützung (nein, spreche ich nicht Deutsches)
+	register_plugin(GG_NAME, GG_VERSION, GG_AUTHOR);
+	register_srvcmd("gg_info", "gg_info");
+	register_srvcmd("gg_status", "gg_status");
+	gg_log_project_info();
+	new versionCvar = create_cvar("gg_version", GG_VERSION, FCVAR_SERVER);
+	set_pcvar_string(versionCvar, GG_VERSION);
+
+	// mehrsprachige unterst tzung (nein, spreche ich nicht Deutsches)
 	register_dictionary("gungame.txt");
 	register_dictionary("common.txt");
 	register_dictionary("adminvote.txt");
@@ -256,16 +473,18 @@ public plugin_init()
 	gmsgCrosshair = get_user_msgid("Crosshair");
 
 	// events
-	register_event("ResetHUD","event_resethud","be");
-	register_event("HLTV","event_new_round","a","1=0","2=0");
-	register_event("CurWeapon","event_curweapon","be","1=1");
-	register_event("AmmoX","event_ammox","be");
-	register_event("30","event_intermission","a");
-	register_event("TextMsg","event_round_restart","a","2=#Game_Commencing","2=#Game_will_restart_in");
-	register_event("23","event_bomb_detonation","a","1=17","6=-105","7=17"); // planted bomb exploded
+	register_event_ex("ResetHUD","event_resethud",RegisterEvent_Single | RegisterEvent_OnlyAlive);
+	register_event_ex("HLTV","event_new_round",RegisterEvent_Global,"1=0","2=0");
+	register_event_ex("CurWeapon","event_curweapon",RegisterEvent_Single | RegisterEvent_OnlyAlive,"1=1");
+	register_event_ex("AmmoX","event_ammox",RegisterEvent_Single | RegisterEvent_OnlyAlive);
+	register_event_ex("30","event_intermission",RegisterEvent_Global);
+	register_event_ex("TextMsg","event_round_restart",RegisterEvent_Global,"2=#Game_Commencing","2=#Game_will_restart_in");
+	register_event_ex("23","event_bomb_detonation",RegisterEvent_Global,"1=17","6=-105","7=17"); // planted bomb exploded
 	
 	// forwards
 	register_forward(FM_SetModel,"fw_setmodel");
+	gg_yapb_fake_cvar = get_cvar_pointer("yb_enable_fake_steamids");
+	register_forward(FM_GetPlayerAuthId,"gg_yapb_auth_post",1);
 	register_forward(FM_EmitSound,"fw_emitsound");
 	
 	// logevents
@@ -323,118 +542,127 @@ public plugin_init()
 	level_menu = register_menuid("level_menu");
 	register_menucmd(level_menu,1023,"level_menu_handler");
 
+	// Runtime debug controls
+	gg_debug = create_cvar("gg_debug","0");
+	gg_debug_sql = create_cvar("gg_debug_sql","0");
+	gg_debug_stats = create_cvar("gg_debug_stats","0");
+	gg_debug_ranking = create_cvar("gg_debug_ranking","0");
+	gg_debug_handicap = create_cvar("gg_debug_handicap","0");
+	gg_debug_handicap_fault = create_cvar("gg_debug_handicap_fault","0");
+	gg_debug_handicap_delay = create_cvar("gg_debug_handicap_delay","0");
+	gg_debug_spawn = create_cvar("gg_debug_spawn","0");
+	gg_debug_motd = create_cvar("gg_debug_motd","0");
+	gg_debug_cache = create_cvar("gg_debug_cache","0");
+
 	// basic cvars
-	gg_enabled = register_cvar("gg_enabled","1");
-	gg_vote_setting = register_cvar("gg_vote_setting","2");
-	gg_vote_custom = register_cvar("gg_vote_custom","");
-	gg_changelevel_custom = register_cvar("gg_changelevel_custom","");
-	gg_map_setup = register_cvar("gg_map_setup","mp_timelimit 45; mp_winlimit 0; sv_alltalk 0; mp_chattime 10; mp_c4timer 25");
-	gg_endmap_setup = register_cvar("gg_endmap_setup","");
-	gg_join_msg = register_cvar("gg_join_msg","1");
-	gg_messages = register_cvar("gg_messages","1");
-	gg_save_temp = register_cvar("gg_save_temp","300"); // = 5 * 60 = 5 minutes
-	gg_status_display = register_cvar("gg_status_display","1");
-	gg_map_iterations = register_cvar("gg_map_iterations","1");
-	gg_ignore_bots = register_cvar("gg_ignore_bots","0");
-	gg_block_equips = register_cvar("gg_block_equips","2");
-	gg_leader_display = register_cvar("gg_leader_display","1");
-	gg_leader_display_x = register_cvar("gg_leader_display_x","-1.0");
-	gg_leader_display_y = register_cvar("gg_leader_display_y","0.0");
-	gg_allow_changeteam = register_cvar("gg_allow_changeteam","2");
-	gg_disable_money = register_cvar("gg_disable_money","1");
-	gg_winner_motd = register_cvar("gg_winner_motd","1");
-	gg_afk_protection = register_cvar("gg_afk_protection","0");
-	gg_top10_ppp = register_cvar("gg_top10_ppp","8");
+	gg_enabled = create_cvar("gg_enabled","1");
+	gg_vote_setting = create_cvar("gg_vote_setting","2");
+	gg_vote_custom = create_cvar("gg_vote_custom","");
+	gg_changelevel_custom = create_cvar("gg_changelevel_custom","");
+	gg_map_setup = create_cvar("gg_map_setup","mp_timelimit 45; mp_winlimit 0; sv_alltalk 0; mp_chattime 10; mp_c4timer 25");
+	gg_endmap_setup = create_cvar("gg_endmap_setup","");
+	gg_join_msg = create_cvar("gg_join_msg","1");
+	gg_messages = create_cvar("gg_messages","1");
+	gg_save_temp = create_cvar("gg_save_temp","300"); // = 5 * 60 = 5 minutes
+	gg_status_display = create_cvar("gg_status_display","1");
+	gg_map_iterations = create_cvar("gg_map_iterations","1");
+	gg_ignore_bots = create_cvar("gg_ignore_bots","0");
+	gg_block_equips = create_cvar("gg_block_equips","2");
+	gg_leader_display = create_cvar("gg_leader_display","1");
+	gg_leader_display_x = create_cvar("gg_leader_display_x","-1.0");
+	gg_leader_display_y = create_cvar("gg_leader_display_y","0.0");
+	gg_allow_changeteam = create_cvar("gg_allow_changeteam","2");
+	gg_disable_money = create_cvar("gg_disable_money","1");
+	gg_winner_motd = create_cvar("gg_winner_motd","1");
+	gg_winner_motd_history = create_cvar("gg_winner_motd_history","0");
+	gg_afk_protection = create_cvar("gg_afk_protection","0");
+	gg_top10_ppp = create_cvar("gg_top10_ppp","8");
 
 	// autovote cvars
-	gg_autovote_mode = register_cvar("gg_autovote_mode","0");
-	gg_autovote_rounds = register_cvar("gg_autovote_rounds","1");
-	gg_autovote_delay = register_cvar("gg_autovote_delay","8.0");
-	gg_autovote_ratio = register_cvar("gg_autovote_ratio","0.51");
-	gg_autovote_time = register_cvar("gg_autovote_time","10.0");
+	gg_autovote_mode = create_cvar("gg_autovote_mode","0");
+	gg_autovote_rounds = create_cvar("gg_autovote_rounds","1");
+	gg_autovote_delay = create_cvar("gg_autovote_delay","8.0");
+	gg_autovote_ratio = create_cvar("gg_autovote_ratio","0.51");
+	gg_autovote_time = create_cvar("gg_autovote_time","10.0");
 
 	// stats cvars
-#if !defined SQL
-	gg_stats_file = register_cvar("gg_stats_file","gungame.stats");
-	gg_stats_streak_file = register_cvar("gg_stats_streak_file","gungame.streaks");
-#endif
-	gg_stats_ip = register_cvar("gg_stats_ip","0");
-	gg_stats_prune = register_cvar("gg_stats_prune","2592000"); // = 60 * 60 * 24 * 30 = 30 days
-	gg_stats_mode = register_cvar("gg_stats_mode","2");
-	gg_stats_split = register_cvar("gg_stats_split","0");
-	gg_stats_winbonus = register_cvar("gg_stats_winbonus","1.5");
+	gg_stats_backend = create_cvar("gg_stats_backend", "0");
+	gg_stats_refresh_on_join = create_cvar("gg_stats_refresh_on_join", "2");
+	gg_stats_file = create_cvar("gg_stats_file","gungame.stats");
+	gg_stats_streak_file = create_cvar("gg_stats_streak_file","gungame.streaks");
+	gg_stats_ip = create_cvar("gg_stats_ip","0");
+	gg_stats_prune = create_cvar("gg_stats_prune","2592000"); // = 60 * 60 * 24 * 30 = 30 days
+	gg_stats_mode = create_cvar("gg_stats_mode","2");
+	gg_stats_split = create_cvar("gg_stats_split","0");
+	gg_stats_winbonus = create_cvar("gg_stats_winbonus","1.5");
 	
 	// deathmatch cvars
-	gg_dm = register_cvar("gg_dm","1");
-	gg_dm_sp_time = register_cvar("gg_dm_sp_time","1.0");
-	gg_dm_sp_mode = register_cvar("gg_dm_sp_mode","1");
-	gg_dm_spawn_random = register_cvar("gg_dm_spawn_random","2");
-	gg_dm_start_random = register_cvar("gg_dm_start_random","1");
-	gg_dm_spawn_delay = register_cvar("gg_dm_spawn_delay","3.0");
-	gg_dm_spawn_afterplant = register_cvar("gg_dm_spawn_afterplant","1");
-	gg_dm_corpses = register_cvar("gg_dm_corpses","1");
-	gg_dm_countdown = register_cvar("gg_dm_countdown","2");
+	gg_dm = create_cvar("gg_dm","1");
+	gg_dm_sp_time = create_cvar("gg_dm_sp_time","1.0");
+	gg_dm_sp_mode = create_cvar("gg_dm_sp_mode","1");
+	gg_dm_spawn_random = create_cvar("gg_dm_spawn_random","2");
+	gg_dm_start_random = create_cvar("gg_dm_start_random","1");
+	gg_dm_spawn_delay = create_cvar("gg_dm_spawn_delay","3.0");
+	gg_dm_spawn_afterplant = create_cvar("gg_dm_spawn_afterplant","1");
+	gg_dm_corpses = create_cvar("gg_dm_corpses","1");
+	gg_dm_countdown = create_cvar("gg_dm_countdown","2");
 	
 	// objective cvars
-	gg_block_objectives = register_cvar("gg_block_objectives","0");
-	gg_bomb_defuse_lvl = register_cvar("gg_bomb_defuse_lvl","1");
-	gg_host_touch_reward = register_cvar("gg_host_touch_reward","2");
-	gg_host_rescue_reward = register_cvar("gg_host_rescue_reward","2");
-	gg_host_kill_reward = register_cvar("gg_host_kill_reward","1");
-	gg_host_kill_penalty = register_cvar("gg_host_kill_penalty","1");
+	gg_block_objectives = create_cvar("gg_block_objectives","0");
+	gg_bomb_defuse_lvl = create_cvar("gg_bomb_defuse_lvl","1");
+	gg_host_touch_reward = create_cvar("gg_host_touch_reward","2");
+	gg_host_rescue_reward = create_cvar("gg_host_rescue_reward","2");
+	gg_host_kill_reward = create_cvar("gg_host_kill_reward","1");
+	gg_host_kill_penalty = create_cvar("gg_host_kill_penalty","1");
 	
 	// teamplay cvars
-	gg_teamplay = register_cvar("gg_teamplay","0");
-	gg_teamplay_knife_mod = register_cvar("gg_teamplay_knife_mod","0.33");
-	gg_teamplay_nade_mod = register_cvar("gg_teamplay_nade_mod","0.50");
-	gg_teamplay_timeratio = register_cvar("gg_teamplay_timeratio","1");
+	gg_teamplay = create_cvar("gg_teamplay","0");
+	gg_teamplay_knife_mod = create_cvar("gg_teamplay_knife_mod","0.33");
+	gg_teamplay_nade_mod = create_cvar("gg_teamplay_nade_mod","0.50");
+	gg_teamplay_timeratio = create_cvar("gg_teamplay_timeratio","1");
 
 	// gameplay cvars
-	gg_ff_auto = register_cvar("gg_ff_auto","1");
-	gg_weapon_order = register_cvar("gg_weapon_order","glock18,usp,p228,deagle,fiveseven,elite,m3,xm1014,tmp,mac10,mp5navy,ump45,p90,galil,famas,ak47,scout,m4a1,sg552,aug,m249,hegrenade,knife");
-	gg_max_lvl = register_cvar("gg_max_lvl","3");
-	gg_triple_on = register_cvar("gg_triple_on","0");
-	gg_turbo = register_cvar("gg_turbo","1");
-	gg_knife_pro = register_cvar("gg_knife_pro","1");
-	gg_knife_elite = register_cvar("gg_knife_elite","0");
-	gg_suicide_penalty = register_cvar("gg_suicide_penalty","1");
-	gg_worldspawn_suicide = register_cvar("gg_worldspawn_suicide","1");
-	gg_pickup_others = register_cvar("gg_pickup_others","0");
-	gg_handicap_on = register_cvar("gg_handicap_on","1");
-	gg_top10_handicap = register_cvar("gg_top10_handicap","1");
-	gg_warmup_timer_setting = register_cvar("gg_warmup_timer_setting","60");
-	gg_warmup_weapon = register_cvar("gg_warmup_weapon",KNIFE);
-	gg_warmup_multi = register_cvar("gg_warmup_multi","0");
-	gg_nade_glock = register_cvar("gg_nade_glock","1");
-	gg_nade_smoke = register_cvar("gg_nade_smoke","0");
-	gg_nade_flash = register_cvar("gg_nade_flash","0");
-	gg_extra_nades = register_cvar("gg_extra_nades","1");
-	gg_nade_refresh = register_cvar("gg_nade_refresh","5.0");
-	gg_kills_per_lvl = register_cvar("gg_kills_per_lvl","2");
-	gg_kills_botmod = register_cvar("gg_kills_botmod","1.0");
-	gg_give_armor = register_cvar("gg_give_armor","100");
-	gg_give_helmet = register_cvar("gg_give_helmet","1");
-	gg_ammo_amount = register_cvar("gg_ammo_amount","200");
-	gg_refill_on_kill = register_cvar("gg_refill_on_kill","1");
-	gg_tk_penalty = register_cvar("gg_tk_penalty","1");
-	gg_awp_oneshot = register_cvar("gg_awp_oneshot","1");
-	gg_bots_skipnade = register_cvar("gg_bots_skipnade","0");
-	gg_bots_knifeable = register_cvar("gg_bots_knifeable","1");
+	gg_ff_auto = create_cvar("gg_ff_auto","1");
+	gg_weapon_order = create_cvar("gg_weapon_order","glock18,usp,p228,deagle,fiveseven,elite,m3,xm1014,tmp,mac10,mp5navy,ump45,p90,galil,famas,ak47,scout,m4a1,sg552,aug,m249,hegrenade,knife");
+	gg_max_lvl = create_cvar("gg_max_lvl","3");
+	gg_triple_on = create_cvar("gg_triple_on","0");
+	gg_turbo = create_cvar("gg_turbo","1");
+	gg_knife_pro = create_cvar("gg_knife_pro","1");
+	gg_knife_elite = create_cvar("gg_knife_elite","0");
+	gg_suicide_penalty = create_cvar("gg_suicide_penalty","1");
+	gg_worldspawn_suicide = create_cvar("gg_worldspawn_suicide","1");
+	gg_pickup_others = create_cvar("gg_pickup_others","0");
+	gg_handicap_on = create_cvar("gg_handicap_on","1");
+	gg_top10_handicap = create_cvar("gg_top10_handicap","1");
+	gg_warmup_timer_setting = create_cvar("gg_warmup_timer_setting","60");
+	gg_warmup_weapon = create_cvar("gg_warmup_weapon",KNIFE);
+	gg_warmup_multi = create_cvar("gg_warmup_multi","0");
+	gg_nade_glock = create_cvar("gg_nade_glock","1");
+	gg_nade_smoke = create_cvar("gg_nade_smoke","0");
+	gg_nade_flash = create_cvar("gg_nade_flash","0");
+	gg_extra_nades = create_cvar("gg_extra_nades","1");
+	gg_nade_refresh = create_cvar("gg_nade_refresh","5.0");
+	gg_kills_per_lvl = create_cvar("gg_kills_per_lvl","2");
+	gg_kills_botmod = create_cvar("gg_kills_botmod","1.0");
+	gg_give_armor = create_cvar("gg_give_armor","100");
+	gg_give_helmet = create_cvar("gg_give_helmet","1");
+	gg_ammo_amount = create_cvar("gg_ammo_amount","200");
+	gg_refill_on_kill = create_cvar("gg_refill_on_kill","1");
+	gg_tk_penalty = create_cvar("gg_tk_penalty","1");
+	gg_awp_oneshot = create_cvar("gg_awp_oneshot","1");
+	gg_bots_skipnade = create_cvar("gg_bots_skipnade","0");
+	gg_bots_knifeable = create_cvar("gg_bots_knifeable","1");
 
-#if defined SQL
-		// SQL cvars
-		gg_sql_host = register_cvar("gg_sql_host","127.0.0.1",FCVAR_PROTECTED);
-		gg_sql_user = register_cvar("gg_sql_user","root",FCVAR_PROTECTED);
-		gg_sql_pass = register_cvar("gg_sql_pass","",FCVAR_PROTECTED);
-		gg_sql_db = register_cvar("gg_sql_db","amx",FCVAR_PROTECTED);
-		gg_sql_table = register_cvar("gg_sql_table","gg_stats",FCVAR_PROTECTED);
-		gg_sql_streak_table = register_cvar("gg_sql_streak_table","gg_streaks",FCVAR_PROTECTED);
-		gg_sql_winmotd_table = register_cvar("gg_sql_winmotd_table","gg_winmotd",FCVAR_PROTECTED);
+	// SQL cvars
+	gg_sql_host = create_cvar("gg_sql_host","",FCVAR_PROTECTED);
+	gg_sql_user = create_cvar("gg_sql_user","",FCVAR_PROTECTED);
+	gg_sql_pass = create_cvar("gg_sql_pass","",FCVAR_PROTECTED);
+	gg_sql_db = create_cvar("gg_sql_db","",FCVAR_PROTECTED);
+	gg_sql_table = create_cvar("gg_sql_table","gg_stats",FCVAR_PROTECTED);
+	gg_sql_streak_table = create_cvar("gg_sql_streak_table","gg_streaks",FCVAR_PROTECTED);
+	gg_sql_winmotd_table = create_cvar("gg_sql_winmotd_table","gg_winmotd",FCVAR_PROTECTED);
 
-		get_user_ip(0,serverip,63,0); // with port
-#else
-		sqlInit = 1;
-#endif
+	get_user_ip(0,serverip,63,0); // with port
 	
 	// sound cvars done in plugin_precache now
 
@@ -443,17 +671,17 @@ public plugin_init()
 	for(i=1;i<=MAX_WEAPON_ORDERS;i++)
 	{
 		formatex(cvar,19,"gg_weapon_order%i",i);
-		register_cvar(cvar,"");
+		create_cvar(cvar,"");
 	}
 	
 	// update status immediately
 	ggActive = get_pcvar_num(gg_enabled);
 
 	// make sure to setup amx_nextmap incase nextmap.amxx isn't running
-	if(!cvar_exists("amx_nextmap")) register_cvar("amx_nextmap","",FCVAR_SERVER|FCVAR_EXTDLL|FCVAR_SPONLY);
+	if(!cvar_exists("amx_nextmap")) create_cvar("amx_nextmap","",FCVAR_SERVER|FCVAR_EXTDLL|FCVAR_SPONLY);
 	
 	// make sure we have this to trick mapchooser.amxx into working
-	if(!cvar_exists("mp_maxrounds")) register_cvar("mp_maxrounds","0",FCVAR_SERVER|FCVAR_EXTDLL|FCVAR_SPONLY);
+	if(!cvar_exists("mp_maxrounds")) create_cvar("mp_maxrounds","0",FCVAR_SERVER|FCVAR_EXTDLL|FCVAR_SPONLY);
 
 	// collect some other information that would be handy
 	maxPlayers = get_maxplayers();
@@ -485,35 +713,38 @@ public plugin_init()
 	init_spawns();
 
 	// delay for server.cfg
-	set_task(1.0,"toggle_gungame",TASK_TOGGLE_GUNGAME + TOGGLE_FORCE);
+	set_task_ex(1.0,"toggle_gungame",TASK_TOGGLE_GUNGAME + TOGGLE_FORCE);
 
 	// manage pruning (longer delay for toggle_gungame)
-	set_task(2.0,"manage_pruning");
+	set_task_ex(2.0,"manage_pruning");
 	
 	// map configs take 6.1 seconds to load
-	set_task(6.2,"setup_weapon_order");
-	set_task(6.2,"stats_get_top_players",TASK_GET_TOP_PLAYERS);
+	set_task_ex(6.2,"setup_weapon_order");
+	set_task_ex(6.2,"stats_get_top_players",TASK_GET_TOP_PLAYERS);
 }
 
 // plugin precache
+/**
+ * Prepare resources required by the plugin before gameplay begins.
+ */
 public plugin_precache()
 {
 	// used in precache_sounds_from_config()
 	get_configsdir(cfgDir,31);
 
 	// sound cvars
-	gg_sound_levelup = register_cvar("gg_sound_levelup","sound/gungame/gg_levelup.wav");
-	gg_sound_leveldown = register_cvar("gg_sound_leveldown","sound/ambience/xtal_down1(e70)");
-	gg_sound_levelsteal = register_cvar("gg_sound_levelsteal","sound/turret/tu_die.wav");
-	gg_sound_nade = register_cvar("gg_sound_nade","sound/gungame/gg_nade_level.wav");
-	gg_sound_knife = register_cvar("gg_sound_knife","sound/gungame/gg_knife_level.wav");
-	gg_sound_welcome = register_cvar("gg_sound_welcome","sound/gungame/gg_welcome.wav");
-	gg_sound_triple = register_cvar("gg_sound_triple","sound/gungame/gg_triple.wav");
-	gg_sound_winner = register_cvar("gg_sound_winner","media/Half-Life03.mp3;media/Half-Life08.mp3;media/Half-Life11.mp3;media/Half-Life17.mp3");
-	gg_sound_takenlead = register_cvar("gg_sound_takenlead","sound/gungame/gg_takenlead.wav");
-	gg_sound_tiedlead = register_cvar("gg_sound_tiedlead","sound/gungame/gg_tiedlead.wav");
-	gg_sound_lostlead = register_cvar("gg_sound_lostlead","sound/gungame/gg_lostlead.wav");
-	gg_lead_sounds = register_cvar("gg_lead_sounds","0.9");
+	gg_sound_levelup = create_cvar("gg_sound_levelup","sound/gungame/gg_levelup.wav");
+	gg_sound_leveldown = create_cvar("gg_sound_leveldown","sound/ambience/xtal_down1(e70)");
+	gg_sound_levelsteal = create_cvar("gg_sound_levelsteal","sound/turret/tu_die.wav");
+	gg_sound_nade = create_cvar("gg_sound_nade","sound/gungame/gg_nade_level.wav");
+	gg_sound_knife = create_cvar("gg_sound_knife","sound/gungame/gg_knife_level.wav");
+	gg_sound_welcome = create_cvar("gg_sound_welcome","sound/gungame/gg_welcome.wav");
+	gg_sound_triple = create_cvar("gg_sound_triple","sound/gungame/gg_triple.wav");
+	gg_sound_winner = create_cvar("gg_sound_winner","media/Half-Life03.mp3;media/Half-Life08.mp3;media/Half-Life11.mp3;media/Half-Life17.mp3");
+	gg_sound_takenlead = create_cvar("gg_sound_takenlead","sound/gungame/gg_takenlead.wav");
+	gg_sound_tiedlead = create_cvar("gg_sound_tiedlead","sound/gungame/gg_tiedlead.wav");
+	gg_sound_lostlead = create_cvar("gg_sound_lostlead","sound/gungame/gg_lostlead.wav");
+	gg_lead_sounds = create_cvar("gg_lead_sounds","0.9");
 
 	mp_friendlyfire = get_cvar_pointer("mp_friendlyfire");
 
@@ -577,16 +808,20 @@ public plugin_precache()
 	trailSpr = precache_model("sprites/laserbeam.spr");
 }
 
+/**
+ * Handle plugin cfg processing.
+ */
 public plugin_cfg()
 {
 	galileoID = is_plugin_loaded("Galileo");
 }
 
+/**
+ * Perform plugin shutdown processing.
+ */
 public plugin_end()
 {
-#if defined SQL
-	sql_uninit();
-#endif
+	if (gg_backend == 1 && !gg_sql_missing) sql_uninit();
 
 	// run endmap setup on plugin close
 	if(ggActive)
@@ -605,10 +840,60 @@ public plugin_end()
 //**********************************************************************
 
 // client gets a steamid
+
+// ============================================================================
+// CLIENT AUTHORIZATION, CONNECTION AND IDENTITY LIFECYCLE
+// ============================================================================
+
+/**
+ * Handle client authorized processing.
+ */
 public client_authorized(id)
 {
 	clear_values(id);
+	if(get_pcvar_num(gg_stats_ip) == 0 && is_user_bot(id) && gg_yapb_fake_cvar && get_pcvar_num(gg_yapb_fake_cvar))
+	{
+		new auth[32];
+		get_gg_authid(id,auth,31);
+		if(equal(auth,"BOT"))
+		{
+			gg_yapb_pending[id] = get_user_userid(id);
+			set_task_ex(1.0,"gg_yapb_finish_auth",TASK_YAPB_AUTH+id);
+			return;
+		}
+	}
+	gg_finish_authorized(id);
+}
 
+/**
+ * Complete YaPB auth.
+ */
+public gg_yapb_finish_auth(taskid)
+{
+	new id = taskid-TASK_YAPB_AUTH;
+	if(!is_user_connected(id) || !gg_yapb_pending[id] || gg_yapb_pending[id] != get_user_userid(id)) return;
+	gg_yapb_pending[id] = 0;
+	new authid[32];
+	get_gg_authid(id,authid,31);
+	// Preserve a completed SQL load for the same connection and identity.
+	if(gg_backend == 1 && gg_sql_load_state[id] == GG_STATS_READY && authid[0] && equal(playerStats[id][sdAuthid],authid) && equal(gg_sql_load_auth[id],authid))
+	{
+	}
+	else
+	{
+		statsPosition[id][0] = 0;
+		statsPosition[id][1] = 0;
+		gg_sql_invalidate_player(id);
+		stats_clear_struct(playerStats[id]);
+	}
+	gg_finish_authorized(id);
+}
+
+/**
+ * Complete authorized.
+ */
+stock gg_finish_authorized(id)
+{
 	static authid[32];
 	get_gg_authid(id,authid,31);
 
@@ -648,32 +933,41 @@ public client_authorized(id)
 		}
 	}
 	
-#if defined SQL
-	if(!statsPosition[id][0]) stats_get_position(id,authid,0);
-	if(!statsPosition[id][1]) stats_get_position(id,authid,1);
-#else
-	// cache our position if we didn't get it from a save
-	if(!statsPosition[id][0] || !statsPosition[id][1])
+	if (gg_backend == 1)
 	{
-		if(statsArray) // we've set up the stats array
+		// Prefetch player statistics and ranking together.
+		gg_sql_prefetch_player(id,authid);
+	}
+	else
+	{
+		// cache our position if we didn't get it from a save
+		if(!statsPosition[id][0] || !statsPosition[id][1])
 		{
-			recheck_stats_sorting(); // see if anything changed
+			if(statsArray) // we've set up the stats array
+			{
+				recheck_stats_sorting(); // see if anything changed
 
-			// if nothing happened, get my position
-			if(!statsPosition[id][0]) stats_get_position(id,authid,0);
-			if(!statsPosition[id][1]) stats_get_position(id,authid,1);
+				// if nothing happened, get my position
+				if(!statsPosition[id][0]) stats_get_position(id,authid,0);
+				if(!statsPosition[id][1]) stats_get_position(id,authid,1);
+			}
 		}
 	}
-#endif
 	
-#if defined REFRESH_TIMESTAMP_ON_JOIN
-	stats_refresh_timestamp(authid);
-#endif
+	if (sqlInit && gg_refresh_on_join())
+	{
+		stats_refresh_timestamp(authid);
+	}
 }
 
 // client leaves, reset values
-public client_disconnect(id)
+/**
+ * Handle client disconnected processing.
+ */
+public client_disconnected(id, bool:drop, message[], maxlen)
 {
+	gg_top_generation[id]++;
+	remove_task(TASK_YAPB_AUTH+id);
 	// remove certain tasks
 	remove_task(TASK_VERIFY_WEAPON+id);
 	remove_task(TASK_REFRESH_NADE+id);
@@ -723,21 +1017,47 @@ public client_disconnect(id)
 			tempSave[freeSave][svTeamTimes][1] = _:teamTimes[id][1];
 			tempSave[freeSave][svTime] = _:get_gametime();
 
-			set_task(float(save_temp),"clear_save",TASK_CLEAR_SAVE+freeSave);
+			set_task_ex(float(save_temp),"clear_save",TASK_CLEAR_SAVE+freeSave);
 		}
 	}
 
+	gg_handicap_pending[id] = 0;
 	clear_values(id);
 	statsPosition[id][0] = 0;
 	statsPosition[id][1] = 0;
+	gg_sql_invalidate_player(id);
 	stats_clear_struct(playerStats[id]);
+	gg_yapb_clear(id);
 }
 
 // someone joins, monitor ham hooks
+/**
+ * Handle client connect processing.
+ */
+public client_connect(id)
+{
+	gg_handicap_pending[id] = 0;
+	gg_handicap_retry[id] = 0;
+	gg_sql_invalidate_player(id);
+	gg_yapb_clear(id);
+}
+
+/**
+ * Handle client putinserver processing.
+ */
 public client_putinserver(id)
 {
+	// Retry a prefetch deferred until the player is fully connected.
+	if(gg_backend == 1 && !gg_yapb_pending[id])
+	{
+		new authid[32];
+		get_gg_authid(id,authid,31);
+		if(authid[0] && !equal(authid,"STEAM_ID_PENDING") && !equal(authid,"VALVE_ID_PENDING"))
+			gg_sql_prefetch_player(id,authid);
+	}
+
 	if(czero && !czbot_hams && is_user_bot(id) && get_pcvar_num(bot_quota) > 0)
-		set_task(0.1,"czbot_hook_ham",id);
+		set_task_ex(0.1,"czbot_hook_ham",id);
 	
 	// bots don't call joinclass
 	if(is_user_bot(id)) cmd_joinclass(id);
@@ -747,6 +1067,9 @@ public client_putinserver(id)
 // here is the problem: registering a ham hook for "player" won't
 // register it for CZ bots, for some reason. so we have to register
 // it by entity. so we do this ridiculous thing in order to do so.
+/**
+ * Handle czbot hook ham processing.
+ */
 public czbot_hook_ham(id)
 {
 	if(czbot_hams || !is_user_connected(id)) return;
@@ -766,6 +1089,9 @@ public czbot_hook_ham(id)
 }
 
 // remove a save
+/**
+ * Clear save.
+ */
 public clear_save(taskid)
 {
 	remove_task(taskid);
@@ -773,6 +1099,9 @@ public clear_save(taskid)
 }
 
 // my info... it's changed!
+/**
+ * Handle client infochanged processing.
+ */
 public client_infochanged(id)
 {
 	if(!ggActive || !is_user_connected(id))
@@ -809,6 +1138,14 @@ public client_infochanged(id)
 //**********************************************************************
 
 // an entity is given a model, check for silenced/burst status
+
+// ============================================================================
+// ENGINE FORWARDS AND GAMEPLAY EVENTS
+// ============================================================================
+
+/**
+ * Handle the setmodel engine forward.
+ */
 public fw_setmodel(ent,model[])
 {
 	if(!ggActive) return FMRES_IGNORED;
@@ -873,6 +1210,9 @@ public fw_setmodel(ent,model[])
 }
 
 // HELLO HELLo HELlo HEllo Hello hello
+/**
+ * Handle the emitsound engine forward.
+ */
 public fw_emitsound(ent,channel,sample[],Float:volume,Float:atten,flags,pitch)
 {
 	if(!ggActive || !is_user_connected(ent) || !get_pcvar_num(gg_dm) || spawnSounds[ent])
@@ -887,13 +1227,19 @@ public fw_emitsound(ent,channel,sample[],Float:volume,Float:atten,flags,pitch)
 //**********************************************************************
 
 // our HUD gets reset (obviously)
+/**
+ * Handle the resethud game event.
+ */
 public event_resethud(id)
 {
 	if(ggActive && is_user_connected(id))
-		set_task(0.1,"reset_hud",id);
+		set_task_ex(0.1,"reset_hud",id);
 }
 
 // fix the leader display and hide money
+/**
+ * Handle reset hud processing.
+ */
 public reset_hud(id)
 {
 	if(is_user_connected(id))
@@ -904,6 +1250,9 @@ public reset_hud(id)
 }
 
 // someone changes weapons
+/**
+ * Handle the curweapon game event.
+ */
 public event_curweapon(id)
 {
 	if(!ggActive || !is_user_connected(id)) return;
@@ -929,6 +1278,9 @@ public event_curweapon(id)
 }
 
 // a new round has begun
+/**
+ * Handle the new round game event.
+ */
 public event_new_round()
 {
 	static armourysHidden = 0;
@@ -946,7 +1298,7 @@ public event_new_round()
 		{
 			autovoted = 1;
 			autovote_mode = -1; // signal to check in autovote_start
-			set_task(get_pcvar_float(gg_autovote_delay),"autovote_start");
+			set_task_ex(get_pcvar_float(gg_autovote_delay),"autovote_start");
 		}
 	}
 
@@ -963,6 +1315,10 @@ public event_new_round()
 		start_warmup();
 	}
 	
+	// Start timing on the first live round after warmup or a full reset.
+	if(gameCommenced && !won && warmup <= 0 && gg_match_started_at < 0.0)
+		gg_match_started_at = get_gametime();
+
 	if(warmup <= 0)
 	{
 		new leader = get_leader();
@@ -973,17 +1329,17 @@ public event_new_round()
 	
 	// reset leader display
 	remove_task(TASK_LEADER_DISPLAY);
-	set_task(0.5,"show_leader_display"); // wait to initialize levels
+	set_task_ex(0.5,"show_leader_display"); // wait to initialize levels
 
 	new pickup_others = get_pcvar_num(gg_pickup_others);
 	if(!pickup_others /*&& !armourysHidden*/) // they show up again on new round
 	{
-		set_task(0.1,"hide_armory_entitys");
+		set_task_ex(0.1,"hide_armory_entitys");
 		armourysHidden = 1;
 	}
 	else if(pickup_others && armourysHidden)
 	{
-		set_task(0.1,"show_armory_entitys");
+		set_task_ex(0.1,"show_armory_entitys");
 		armourysHidden = 0;
 	}
 
@@ -992,7 +1348,7 @@ public event_new_round()
 	{
 		// block hostages
 		if(get_pcvar_num(gg_block_objectives))
-			set_task(0.1,"move_hostages");
+			set_task_ex(0.1,"move_hostages");
 		else
 		{
 			// reset hostage info
@@ -1007,10 +1363,13 @@ public event_new_round()
 
 	// start in random positions at round start
 	if(get_pcvar_num(gg_dm) && get_pcvar_num(gg_dm_start_random))
-		set_task(0.1,"randomly_place_everyone");
+		set_task_ex(0.1,"randomly_place_everyone");
 }
 
 // hide the armoury_entity's so players cannot pick them up
+/**
+ * Hide armory entitys.
+ */
 public hide_armory_entitys()
 {
 	new ent = maxPlayers;
@@ -1022,6 +1381,9 @@ public hide_armory_entitys()
 }
 
 // reveal the armoury_entity's so players CAN pick them up
+/**
+ * Display armory entitys.
+ */
 public show_armory_entitys()
 {
 	new ent = maxPlayers;
@@ -1033,6 +1395,9 @@ public show_armory_entitys()
 }
 
 // move the hostages so that CTs can't get to them
+/**
+ * Move hostages.
+ */
 public move_hostages()
 {
 	new ent = maxPlayers;
@@ -1041,6 +1406,9 @@ public move_hostages()
 }
 
 // round is restarting (TAG: sv_restartround)
+/**
+ * Handle the round restart game event.
+ */
 public event_round_restart()
 {
 	// re-entrancy fix
@@ -1074,13 +1442,17 @@ public event_round_restart()
 	{
 		read_data(3,message,4); // time to restart in
 		new Float:time = floatstr(message) - 0.1;
-		set_task((time < 0.1) ? 0.1 : time,"clear_all_values");
+		set_task_ex((time < 0.1) ? 0.1 : time,"clear_all_values");
 	}*/
 }
 
 // a delayed clearing
+/**
+ * Clear all values.
+ */
 public clear_all_values()
 {
+	gg_match_started_at = -1.0;
 	new player;
 	for(player=1;player<=maxPlayers;player++)
 	{
@@ -1092,6 +1464,9 @@ public clear_all_values()
 }
 
 // the bomb explodes
+/**
+ * Handle the bomb detonation game event.
+ */
 public event_bomb_detonation()
 {
 	if(!ggActive || get_pcvar_num(gg_bomb_defuse_lvl) != 2 || !c4planter)
@@ -1117,6 +1492,9 @@ public event_bomb_detonation()
 }
 
 // ammo amount changes
+/**
+ * Handle the ammox game event.
+ */
 public event_ammox(id)
 {
 	new type = read_data(1);
@@ -1139,17 +1517,20 @@ public event_ammox(id)
 	if(refresh <= 0.0 || task_exists(TASK_REFRESH_NADE+id)) return;
 
 	// start the timer for the new grenade
-	set_task(refresh,"refresh_nade",TASK_REFRESH_NADE+id);
+	set_task_ex(refresh,"refresh_nade",TASK_REFRESH_NADE+id);
 }
 
 // map is changing
+/**
+ * Handle the intermission game event.
+ */
 public event_intermission()
 {
 	if(!ggActive) return;
 	
 	if(won)
 	{
-		if(set_nextmap()) set_task(1.0,"goto_nextmap");
+		if(set_nextmap()) set_task_ex(1.0,"goto_nextmap");
 		return;
 	}
 	
@@ -1166,7 +1547,7 @@ public event_intermission()
 	// did not find any players on a valid team, game over man
 	if(!found)
 	{
-		if(set_nextmap()) set_task(1.0,"goto_nextmap");
+		if(set_nextmap()) set_task_ex(1.0,"goto_nextmap");
 		return;
 	}
 	
@@ -1206,7 +1587,7 @@ public event_intermission()
 		}
 		
 		win(plWinner,plLoser);
-		if(set_nextmap()) set_task(1.0,"goto_nextmap");
+		if(set_nextmap()) set_task_ex(1.0,"goto_nextmap");
 
 		return;
 	}
@@ -1217,12 +1598,12 @@ public event_intermission()
 
 	// grab player list
 	new players[32], pNum, winner, i;
-	get_players(players,pNum);
+	get_players_ex(players,pNum);
 	
 	// no one here
 	if(pNum <= 0)
 	{
-		if(set_nextmap()) set_task(1.0,"goto_nextmap");
+		if(set_nextmap()) set_task_ex(1.0,"goto_nextmap");
 		return;
 	}
 
@@ -1291,7 +1672,7 @@ public event_intermission()
 	win(winner,0);
 	
 	// go to next map in cycle
-	if(set_nextmap()) set_task(1.0,"goto_nextmap");
+	if(set_nextmap()) set_task_ex(1.0,"goto_nextmap");
 }
 
 //**********************************************************************
@@ -1299,6 +1680,14 @@ public event_intermission()
 //**********************************************************************
 
 // bomb is dropped, remember for DM
+
+// ============================================================================
+// GAME MESSAGE INTERCEPTION
+// ============================================================================
+
+/**
+ * Handle the bombdrop game message.
+ */
 public message_bombdrop(msg_id,msg_dest,msg_entity)
 {
 	if(ggActive && get_pcvar_num(gg_block_objectives))
@@ -1314,6 +1703,9 @@ public message_bombdrop(msg_id,msg_dest,msg_entity)
 }
 
 // bomb is picked up, remember for DM
+/**
+ * Handle the bombpickup game message.
+ */
 public message_bombpickup(msg_id,msg_dest,msg_entity)
 {
 	bombStatus[3] = BOMB_PICKEDUP;
@@ -1321,6 +1713,9 @@ public message_bombpickup(msg_id,msg_dest,msg_entity)
 }
 
 // scenario changes
+/**
+ * Handle the scenario game message.
+ */
 public message_scenario(msg_id,msg_dest,msg_entity)
 {
 	// disabled
@@ -1344,6 +1739,9 @@ public message_scenario(msg_id,msg_dest,msg_entity)
 }
 
 // remove c4 if we disabled objectives
+/**
+ * Handle the weappickup game message.
+ */
 public message_weappickup(msg_id,msg_dest,msg_entity)
 {
 	if(!bombMap || !ggActive || !get_pcvar_num(gg_block_objectives))
@@ -1351,7 +1749,7 @@ public message_weappickup(msg_id,msg_dest,msg_entity)
 
 	if(get_msg_arg_int(1) == CSW_C4)
 	{
-		set_task(0.1,"strip_c4",msg_entity);
+		set_task_ex(0.1,"strip_c4",msg_entity);
 		return PLUGIN_HANDLED;
 	}
 
@@ -1359,6 +1757,9 @@ public message_weappickup(msg_id,msg_dest,msg_entity)
 }
 
 // delay, since weappickup is slightly before we actually get the weapon
+/**
+ * Strip c4.
+ */
 public strip_c4(id)
 {
 	if(!is_user_connected(id)) return;
@@ -1373,6 +1774,9 @@ public strip_c4(id)
 }
 
 // block c4 ammo message if we disabled objectives
+/**
+ * Handle the ammopickup game message.
+ */
 public message_ammopickup(msg_id,msg_dest,msg_entity)
 {
 	if(!bombMap || !ggActive || !get_pcvar_num(gg_block_objectives))
@@ -1385,6 +1789,9 @@ public message_ammopickup(msg_id,msg_dest,msg_entity)
 }
 
 // block dropped the bomb message if we disabled objectives
+/**
+ * Handle the textmsg game message.
+ */
 public message_textmsg(msg_id,msg_dest,msg_entity)
 {
 	if(!bombMap || !ggActive || !get_pcvar_num(gg_block_objectives))
@@ -1400,6 +1807,9 @@ public message_textmsg(msg_id,msg_dest,msg_entity)
 }
 
 // block hostages from appearing on radar if we disabled objectives
+/**
+ * Handle the hostagepos game message.
+ */
 public message_hostagepos(msg_id,msg_dest,msg_entity)
 {
 	if(!ggActive || !get_pcvar_num(gg_block_objectives))
@@ -1409,6 +1819,9 @@ public message_hostagepos(msg_id,msg_dest,msg_entity)
 }
 
 // a corpse is to be set, stop player shells bug (thanks sawce)
+/**
+ * Handle the clcorpse game message.
+ */
 public message_clcorpse(msg_id,msg_dest,msg_entity)
 {
 	if(!ggActive || get_msg_args() < 12)
@@ -1421,6 +1834,9 @@ public message_clcorpse(msg_id,msg_dest,msg_entity)
 }
 
 // money money money!
+/**
+ * Handle the money game message.
+ */
 public message_money(msg_id,msg_dest,msg_entity)
 {
 	if(!ggActive || !is_user_connected(msg_entity) || !is_user_alive(msg_entity) || !get_pcvar_num(gg_disable_money))
@@ -1442,6 +1858,14 @@ public message_money(msg_id,msg_dest,msg_entity)
 //**********************************************************************
 
 // someone planted the bomb
+
+// ============================================================================
+// OBJECTIVE AND TEAM LOG EVENTS
+// ============================================================================
+
+/**
+ * Handle the bomb planted log event.
+ */
 public logevent_bomb_planted()
 {
 	if(!ggActive || !get_pcvar_num(gg_bomb_defuse_lvl) || roundEnded)
@@ -1463,6 +1887,9 @@ public logevent_bomb_planted()
 }
 
 // someone defused the bomb
+/**
+ * Handle the bomb defused log event.
+ */
 public logevent_bomb_defused()
 {
 	if(!ggActive || !get_pcvar_num(gg_bomb_defuse_lvl))
@@ -1479,12 +1906,18 @@ public logevent_bomb_defused()
 }
 
 // the round ends
+/**
+ * Handle the round end log event.
+ */
 public logevent_round_end()
 {
 	roundEnded = 1;
 }
 
 // hostage is touched
+/**
+ * Handle the hostage touched log event.
+ */
 public logevent_hostage_touched()
 {
 	new reward = get_pcvar_num(gg_host_touch_reward);
@@ -1523,6 +1956,9 @@ public logevent_hostage_touched()
 }
 
 // hostage is rescued
+/**
+ * Handle the hostage rescued log event.
+ */
 public logevent_hostage_rescued()
 {
 	new reward = get_pcvar_num(gg_host_rescue_reward);
@@ -1558,6 +1994,9 @@ public logevent_hostage_rescued()
 }
 
 // hostage is killed
+/**
+ * Handle the hostage killed log event.
+ */
 public logevent_hostage_killed()
 {
 	new penalty = get_pcvar_num(gg_host_kill_penalty);
@@ -1582,6 +2021,9 @@ public logevent_hostage_killed()
 }
 
 // someone joins a team
+/**
+ * Handle the team join log event.
+ */
 public logevent_team_join()
 {
 	if(!ggActive) return;
@@ -1649,6 +2091,14 @@ public logevent_team_join()
 //**********************************************************************
 
 // a player respawned
+
+// ============================================================================
+// HAMSANDWICH PLAYER AND WEAPON HOOKS
+// ============================================================================
+
+/**
+ * Handle the player spawn HamSandwich hook.
+ */
 public ham_player_spawn(id)
 {
 	if(ggActive && is_user_alive(id) && cs_get_user_team(id)) // do team check here for bots
@@ -1658,6 +2108,9 @@ public ham_player_spawn(id)
 }
 
 // what do you think happened here?
+/**
+ * Handle the player killed pre HamSandwich hook.
+ */
 public ham_player_killed_pre(victim,killer,gib)
 {
 	if(!ggActive || won || !is_user_connected(victim)) return HAM_IGNORED;
@@ -1713,6 +2166,9 @@ public ham_player_killed_pre(victim,killer,gib)
 }
 
 // it's just that easy (multiplay_gamerules.cpp, ln 709)
+/**
+ * Handle the player killed post HamSandwich hook.
+ */
 public ham_player_killed_post(victim,killer,gib)
 {
 	if(!ggActive || won) return HAM_IGNORED;
@@ -1730,7 +2186,7 @@ public ham_player_killed_post(victim,killer,gib)
 	if(!get_pcvar_num(gg_dm))
 	{
 		remove_task(TASK_CHECK_DEATHMATCH+victim);
-		set_task(10.0,"check_deathmatch",TASK_CHECK_DEATHMATCH+victim);
+		set_task_ex(10.0,"check_deathmatch",TASK_CHECK_DEATHMATCH+victim);
 	}
 
 	// respawn us
@@ -1781,7 +2237,7 @@ public ham_player_killed_post(victim,killer,gib)
 		// this might be a valid team switch, wait it out
 		if(!roundEnded && get_pcvar_num(gg_allow_changeteam))
 		{
-			set_task(0.1,"delayed_suicide",TASK_DELAYED_SUICIDE+victim);
+			set_task_ex(0.1,"delayed_suicide",TASK_DELAYED_SUICIDE+victim);
 			afkCheck[victim] = 0;
 
 			return HAM_IGNORED; // in the meantime, don't penalize the suicide
@@ -1995,6 +2451,9 @@ public ham_player_killed_post(victim,killer,gib)
 }
 
 // a player is touching a weaponbox or armoury_entity, possibly disallow
+/**
+ * Handle the weapon touch HamSandwich hook.
+ */
 public ham_weapon_touch(weapon,other)
 {
 	// gungame off and non-player or dead-player
@@ -2044,6 +2503,14 @@ public ham_weapon_touch(weapon,other)
 //**********************************************************************
 
 // turning GunGame on or off
+
+// ============================================================================
+// ADMINISTRATIVE AND PLAYER COMMANDS
+// ============================================================================
+
+/**
+ * Handle the gungame command.
+ */
 public cmd_gungame(id,level,cid)
 {
 	// no access, or GunGame ending anyway
@@ -2073,7 +2540,7 @@ public cmd_gungame(id,level,cid)
 	}
 
 	restart_round(5);
-	set_task(4.8,"toggle_gungame",TASK_TOGGLE_GUNGAME+newStatus);
+	set_task_ex(4.8,"toggle_gungame",TASK_TOGGLE_GUNGAME+newStatus);
 
 	if(!newStatus)
 	{
@@ -2087,6 +2554,9 @@ public cmd_gungame(id,level,cid)
 }
 
 // voting for GunGame
+/**
+ * Handle the gungame vote command.
+ */
 public cmd_gungame_vote(id,lvl,cid)
 {
 	if(!cmd_access(id,lvl,cid,1))
@@ -2113,6 +2583,9 @@ public cmd_gungame_vote(id,lvl,cid)
 }
 
 // setting players levels
+/**
+ * Handle the gungame level command.
+ */
 public cmd_gungame_level(id,lvl,cid)
 {
 	if(!cmd_access(id,lvl,cid,3))
@@ -2127,13 +2600,13 @@ public cmd_gungame_level(id,lvl,cid)
 	// get player list
 	if(equali(arg1,"*") || equali(arg1,"@ALL"))
 	{
-		get_players(targets,tnum);
+		get_players_ex(targets,tnum);
 		name = "ALL PLAYERS";
 	}
 	else if(arg1[0] == '@')
 	{
 		new players[32], team[10], pnum;
-		get_players(players,pnum);
+		get_players_ex(players,pnum);
 
 		for(i=0;i<pnum;i++)
 		{
@@ -2167,6 +2640,9 @@ public cmd_gungame_level(id,lvl,cid)
 }
 
 // setting players score
+/**
+ * Handle the gungame score command.
+ */
 public cmd_gungame_score(id,lvl,cid)
 {
 	if(!cmd_access(id,lvl,cid,3))
@@ -2182,13 +2658,13 @@ public cmd_gungame_score(id,lvl,cid)
 	// get player list
 	if(equali(arg1,"*") || equali(arg1,"@ALL"))
 	{
-		get_players(targets,tnum);
+		get_players_ex(targets,tnum);
 		name = "ALL PLAYERS";
 	}
 	else if(arg1[0] == '@')
 	{
 		new players[32], team[10], pnum;
-		get_players(players,pnum);
+		get_players_ex(players,pnum);
 
 		for(i=0;i<pnum;i++)
 		{
@@ -2222,6 +2698,9 @@ public cmd_gungame_score(id,lvl,cid)
 }
 
 // forcing a win
+/**
+ * Handle the gungame win command.
+ */
 public cmd_gungame_win(id,lvl,cid)
 {
 	if(!cmd_access(id,lvl,cid,1))
@@ -2252,6 +2731,9 @@ public cmd_gungame_win(id,lvl,cid)
 }
 
 // turn teamplay on or off
+/**
+ * Handle the gungame teamplay command.
+ */
 public cmd_gungame_teamplay(id,lvl,cid)
 {
 	if(!cmd_access(id,lvl,cid,2))
@@ -2304,6 +2786,9 @@ public cmd_gungame_teamplay(id,lvl,cid)
 }
 
 // restarts GunGame
+/**
+ * Handle the gungame restart command.
+ */
 public cmd_gungame_restart(id,lvl,cid)
 {
 	if(!cmd_access(id,lvl,cid,1))
@@ -2319,12 +2804,15 @@ public cmd_gungame_restart(id,lvl,cid)
 	console_print(id,"[GunGame] Restarting GunGame in %i seconds",floatround(time,floatround_ceil));
 	
 	read_argv(2,arg,1);
-	if(str_to_num(arg)) set_task(time-0.1,"toggle_gungame",TASK_TOGGLE_GUNGAME+TOGGLE_ENABLE);
+	if(str_to_num(arg)) set_task_ex(time-0.1,"toggle_gungame",TASK_TOGGLE_GUNGAME+TOGGLE_ENABLE);
 
 	return PLUGIN_HANDLED;
 }
 
 // reload weapon order
+/**
+ * Handle the reloadweapons command.
+ */
 public cmd_reloadweapons(id,lvl,cid)
 {
 	if(!cmd_access(id,lvl,cid,1))
@@ -2337,6 +2825,9 @@ public cmd_reloadweapons(id,lvl,cid)
 }
 
 // hook say
+/**
+ * Handle the say command.
+ */
 public cmd_say(id)
 {
 	if(!ggActive) return PLUGIN_CONTINUE;
@@ -2353,7 +2844,8 @@ public cmd_say(id)
 
 		console_print(id,"-----------------------------");
 		console_print(id,"-----------------------------");
-		console_print(id,"*** Avalanche's %L %s %L ***",id,"GUNGAME",GG_VERSION,id,"RULES");
+		console_print(id, "*** %L %s - %s - %L ***",
+			id, "GUNGAME", GG_VERSION, GG_EDITION, id, "RULES");
 		console_print(id,"%L",id,"RULES_CONSOLE_LINE1",num++);
 		console_print(id,"%L",id,"RULES_CONSOLE_LINE2",num++);
 		if(get_pcvar_num(gg_bomb_defuse_lvl)) console_print(id,"%L",id,"RULES_CONSOLE_LINE3",num++);
@@ -2436,7 +2928,7 @@ public cmd_say(id)
 			return PLUGIN_HANDLED;
 		}
 
-		new len = formatex(menuText,511,"%L^n^n",id,"RESET_QUERY");
+		new len = formatex(menuText,511,"%L^n^n",id,"RESET_QUERY");
 		len += formatex(menuText[len],511-len,"1. %L^n",id,"YES");
 		len += formatex(menuText[len],511-len,"0. %L",id,"CANCEL");
 		show_menu(id,MENU_KEY_1|MENU_KEY_0,menuText,-1,"restart_menu");
@@ -2448,6 +2940,9 @@ public cmd_say(id)
 }
 
 // joining a team
+/**
+ * Handle the joinclass command.
+ */
 public cmd_joinclass(id)
 {
 	if(!ggActive) return PLUGIN_CONTINUE;
@@ -2456,18 +2951,21 @@ public cmd_joinclass(id)
 	if(!get_pcvar_num(gg_dm))
 	{
 		remove_task(TASK_CHECK_DEATHMATCH+id);
-		set_task(10.0,"check_deathmatch",TASK_CHECK_DEATHMATCH+id);
+		set_task_ex(10.0,"check_deathmatch",TASK_CHECK_DEATHMATCH+id);
 		return PLUGIN_CONTINUE;
 	}
 
 	if(roundEnded || (bombStatus[3] == BOMB_PLANTED && !get_pcvar_num(gg_dm_spawn_afterplant)))
 		return PLUGIN_CONTINUE;
 
-	set_task(5.0,"check_joinclass",TASK_CHECK_JOINCLASS+id);
+	set_task_ex(5.0,"check_joinclass",TASK_CHECK_JOINCLASS+id);
 	return PLUGIN_CONTINUE;
 }
 
 // wait a bit after joinclass to see if we should jump in
+/**
+ * Check joinclass.
+ */
 public check_joinclass(taskid)
 {
 	new id = taskid-TASK_CHECK_JOINCLASS;
@@ -2486,6 +2984,14 @@ public check_joinclass(taskid)
 //**********************************************************************
 
 // get all of our spawns into their arrays
+
+// ============================================================================
+// DEATHMATCH SPAWNING AND PROTECTION
+// ============================================================================
+
+/**
+ * Initialize spawns.
+ */
 init_spawns()
 {
 	// grab CSDM file
@@ -2544,6 +3050,9 @@ init_spawns()
 }
 
 // collect boring spawns into our spawn data
+/**
+ * Collect spawns.
+ */
 collect_spawns(classname[])
 {
 	new ent = maxPlayers, Float:spawnData[3];
@@ -2572,6 +3081,9 @@ collect_spawns(classname[])
 }
 
 // bring someone back to life
+/**
+ * Handle begin respawn processing.
+ */
 public begin_respawn(id)
 {
 	if(!ggActive || !get_pcvar_num(gg_dm) || !is_user_connected(id))
@@ -2600,10 +3112,13 @@ public begin_respawn(id)
 	}
 
 	remove_task(TASK_RESPAWN+id);
-	set_task(delay,"respawn",TASK_RESPAWN+id);
+	set_task_ex(delay,"respawn",TASK_RESPAWN+id);
 }
 
 // show the respawn countdown to a player
+/**
+ * Handle respawn countdown processing.
+ */
 public respawn_countdown(id)
 {
 	if(!is_user_connected(id) || is_user_alive(id))
@@ -2623,10 +3138,13 @@ public respawn_countdown(id)
 		ShowSyncHudMsg(id,hudSyncCountdown,"%L",id,"RESPAWN_COUNTDOWN",respawn_timeleft[id]);
 	}
 
-	if(--respawn_timeleft[id] >= 1) set_task(1.0,"respawn_countdown",id);
+	if(--respawn_timeleft[id] >= 1) set_task_ex(1.0,"respawn_countdown",id);
 }
 
 // REALLY bring someone back to life
+/**
+ * Handle respawn processing.
+ */
 public respawn(taskid)
 {
 	new id = taskid-TASK_RESPAWN;
@@ -2691,11 +3209,14 @@ public respawn(taskid)
 		}
 		else fm_set_rendering(id,kRenderFxGlowShell,100,100,100,kRenderNormal,8); // gray/white
 
-		set_task(time,"remove_spawn_protection",TASK_REMOVE_PROTECTION+id);
+		set_task_ex(time,"remove_spawn_protection",TASK_REMOVE_PROTECTION+id);
 	}
 }
 
 // place a user at a random spawn
+/**
+ * Handle do random spawn processing.
+ */
 do_random_spawn(id,spawn_random)
 {
 	// not even alive, don't bother
@@ -2777,6 +3298,9 @@ do_random_spawn(id,spawn_random)
 }
 
 // get rid of the spawn protection effects
+/**
+ * Remove spawn protection.
+ */
 public remove_spawn_protection(taskid)
 {
 	new id = taskid-TASK_REMOVE_PROTECTION;
@@ -2789,6 +3313,9 @@ public remove_spawn_protection(taskid)
 }
 
 // keep checking if a player needs to rejoin
+/**
+ * Check deathmatch.
+ */
 public check_deathmatch(taskid)
 {
 	new id = taskid-TASK_CHECK_DEATHMATCH;
@@ -2802,7 +3329,7 @@ public check_deathmatch(taskid)
 	// DM still not enabled, keep waiting (or: we are still on choose-a-class screen)
 	if(!get_pcvar_num(gg_dm) || !pev(id,pev_iuser1))
 	{
-		set_task(10.0,"check_deathmatch",taskid);
+		set_task_ex(10.0,"check_deathmatch",taskid);
 		return;
 	}
 
@@ -2811,6 +3338,9 @@ public check_deathmatch(taskid)
 }
 
 // what do you think??
+/**
+ * Handle randomly place everyone processing.
+ */
 public randomly_place_everyone()
 {
 	// count number of legitimate players
@@ -2839,6 +3369,14 @@ public randomly_place_everyone()
 //**********************************************************************
 
 // handle the welcome menu
+
+// ============================================================================
+// MENUS AND RANKING PRESENTATION
+// ============================================================================
+
+/**
+ * Handle input for the welcome menu menu.
+ */
 public welcome_menu_handler(id,key)
 {
 	// just save welcomed status and let menu close
@@ -2847,12 +3385,18 @@ public welcome_menu_handler(id,key)
 }
 
 // this menu does nothing but display stuff
+/**
+ * Handle input for the level menu menu.
+ */
 public level_menu_handler(id,key)
 {
 	return PLUGIN_HANDLED;
 }
 
 // handle the reset level menu
+/**
+ * Handle input for the restart menu menu.
+ */
 public restart_menu_handler(id,key)
 {
 	if(get_pcvar_num(gg_teamplay))
@@ -2881,11 +3425,15 @@ public restart_menu_handler(id,key)
 }
 
 // show the level display
+/**
+ * Display level menu.
+ */
 show_level_menu(id)
 {
-#if !defined SQL
-	recheck_stats_sorting();
-#endif
+	if (gg_backend == 0)
+	{
+		recheck_stats_sorting();
+	}
 
 	new goal, tied, leaderNum, leaderList[128], name[32];
 	
@@ -2918,7 +3466,7 @@ show_level_menu(id)
 	else
 	{
 		new players[32], num, i, player;
-		get_players(players,num);
+		get_players_ex(players,num);
 
 		// check for multiple leaders
 		for(i=0;i<num;i++)
@@ -2977,7 +3525,7 @@ show_level_menu(id)
 
 	new stats_mode = get_pcvar_num(gg_stats_mode);
 
-	if(sqlInit && stats_mode)
+	if(sqlInit && stats_mode && (gg_backend != 1 || gg_sql_menu_cache(id,authid)))
 	{
 		new stats_split = get_pcvar_num(gg_stats_split);
 		
@@ -2996,7 +3544,7 @@ show_level_menu(id)
 			keyLINE4  = "LEVEL_MESSAGE_LINE4";
 		}
 
-		stats_get_data(authid,playerStats[id],id);
+		if(gg_backend == 0) stats_get_data(authid,playerStats[id],id);
 
 		if(statsPosition[id][0] > 0) // show rank
 		{
@@ -3060,7 +3608,267 @@ show_level_menu(id)
 }
 
 // show the top10 list menu
+/**
+ * Display top10 menu.
+ */
 show_top10_menu(id)
+{
+	if (!sqlInit) return;
+	if (gg_backend == 1) show_top10_menu_sql(id);
+	else if (gg_backend == 0) show_top10_menu_file(id);
+}
+
+/**
+ * Display top10 menu SQL.
+ */
+show_top10_menu_sql(id)
+{
+    gg_top_generation[id]++;
+    if(!is_user_connected(id) || tuple == Empty_Handle) return;
+    new pppString[74], len = get_pcvar_string(gg_top10_ppp,pppString,63);
+    if(pppString[0] && !isdigit(pppString[0]))
+    {
+        new header[32], lang[3];
+        formatex(header,31,"%L %L",id,"GUNGAME",id,"STATS");
+        gg_get_effective_language(id,lang);
+        formatex(pppString[len],73-len,"?i=%i&l=%s",id,lang);
+        show_motd(id,pppString,header);
+        return;
+    }
+    new si = (page[id] < 0), stats_mode = get_pcvar_num(gg_stats_mode);
+    new winsColumn[8], pointsColumn[10], statement[1024];
+    copy(winsColumn,charsmax(winsColumn),si ? "wins_tp" : "wins");
+    copy(pointsColumn,charsmax(pointsColumn),si ? "points_tp" : "points");
+    if(stats_mode == 2)
+        formatex(statement,charsmax(statement),"SELECT COUNT(*) FROM `%s` WHERE serverip='%s' AND (%s > 0 OR %s > 0);",sqlTable,serverip,winsColumn,pointsColumn);
+    else
+        formatex(statement,charsmax(statement),"SELECT COUNT(*) FROM `%s` WHERE serverip='%s' AND %s > 0;",sqlTable,serverip,winsColumn);
+    gg_top_send(id,0,statement);
+}
+
+/**
+ * Submit top.
+ */
+stock gg_top_send(id,stage,const statement[])
+{
+    if(!is_user_connected(id) || tuple == Empty_Handle) return;
+    new payload[6];
+    payload[0] = id;
+    payload[1] = get_user_userid(id);
+    payload[2] = gg_top_generation[id];
+    payload[3] = page[id];
+    payload[4] = get_pcvar_num(gg_stats_mode);
+    payload[5] = stage;
+    if(gg_debug_active(gg_debug_ranking,3)) log_amx("[GG-SQL-DEBUG] top10 request slot=%i userid=%i generation=%i stage=%i page=%i",id,payload[1],payload[2],stage,payload[3]);
+    SQL_ThreadQuery(tuple,"gg_top_callback",statement,payload,sizeof payload);
+}
+
+/**
+ * Process an asynchronous ranking menu query response.
+ */
+public gg_top_callback(failstate,Handle:result,error[],errnum,data[],size,Float:queuetime)
+{
+    if(size != 6) return;
+    new id = data[0], stage = data[5];
+    if(gg_debug_active(gg_debug_ranking,3)) log_amx("[GG-SQL-DEBUG] top10 callback slot=%i userid=%i generation=%i stage=%i state=%i queue=%.3f",id,data[1],data[2],stage,failstate,queuetime);
+    if(id < 1 || id > 32 || !is_user_connected(id) || get_user_userid(id) != data[1]) return;
+    if(gg_top_generation[id] != data[2] || page[id] != data[3] || get_pcvar_num(gg_stats_mode) != data[4] || !sqlInit || gg_backend != 1) return;
+    if(failstate != 0)
+    {
+        gg_sql_handle_connection_error(failstate,errnum);
+        log_amx("Threaded top10 query failed (stage %i, state %i, error #%i): %s",stage,failstate,errnum,error);
+        return;
+    }
+    new si = (page[id] < 0), statement[1024];
+    if(stage == 0)
+    {
+        gg_top_rows[id] = SQL_NumResults(result) ? SQL_ReadResult(result,0) : 0;
+        gg_top_streak[id] = 0;
+        gg_top_champ_name[id][0] = 0;
+        gg_top_champ_auth[id][0] = 0;
+        new ppp = get_pcvar_num(gg_top10_ppp);
+        if(ppp < 1) return;
+        gg_top_pages[id] = floatround(float(gg_top_rows[id]+1) / float(ppp),floatround_ceil);
+        if(gg_top_pages[id] < 1) gg_top_pages[id] = 1;
+        if(abs(page[id]) > gg_top_pages[id]) page[id] = (page[id] < 0) ? -gg_top_pages[id] : gg_top_pages[id];
+        if(abs(page[id]) == 1)
+        {
+            formatex(statement,charsmax(statement),"SELECT authid,streak,name FROM `%s` WHERE type='%iR' AND serverip='%s' LIMIT 1;",sqlStreakTable,si,serverip);
+            gg_top_send(id,1,statement);
+        }
+        else gg_top_prepare_page(id);
+    }
+    else if(stage == 1)
+    {
+        if(SQL_NumResults(result))
+        {
+            SQL_ReadResult(result,0,gg_top_champ_auth[id],31);
+            gg_top_streak[id] = SQL_ReadResult(result,1);
+            SQL_ReadResult(result,2,gg_top_champ_name[id],31);
+        }
+        gg_top_prepare_page(id);
+    }
+    else if(stage == 2) gg_top_render_page(id,result);
+    else if(stage == 3)
+    {
+        new authid[32], rowAuthid[32], position = statsPosition[id][si], found;
+        get_gg_authid(id,authid,31);
+        while(SQL_MoreResults(result))
+        {
+            SQL_ReadResult(result,0,rowAuthid,31);
+            if(equal(authid,rowAuthid)) { found = 1; break; }
+            position++;
+            SQL_NextRow(result);
+        }
+        if(!found) { if(gg_debug_active(gg_debug_ranking,2)) log_amx("[GG-SQL-DEBUG] top10 jump identity not found slot=%i",id); return; }
+        new ppp = get_pcvar_num(gg_top10_ppp);
+        if(ppp < 1) return;
+        page[id] = floatround(float(position) / float(ppp),floatround_floor) + 1;
+        if(si) page[id] *= -1;
+        show_top10_menu_sql(id);
+    }
+}
+
+/**
+ * Prepare top page.
+ */
+stock gg_top_prepare_page(id)
+{
+    new ppp = get_pcvar_num(gg_top10_ppp);
+    if(ppp < 1) return;
+    if(!gg_top_rows[id]) { gg_top_render_page(id,Empty_Handle); return; }
+    new si = (page[id] < 0), stats_mode = get_pcvar_num(gg_stats_mode);
+    new winsColumn[8], pointsColumn[10], streakColumn[10], statement[2048];
+    copy(winsColumn,charsmax(winsColumn),si ? "wins_tp" : "wins");
+    copy(pointsColumn,charsmax(pointsColumn),si ? "points_tp" : "points");
+    copy(streakColumn,charsmax(streakColumn),si ? "streak_tp" : "streak");
+    new start = ppp * (abs(page[id])-1), count = ppp;
+    if(abs(page[id]) == 1) count--;
+    else start--;
+    if(stats_mode == 2)
+        formatex(statement,charsmax(statement),"SELECT authid,name,%s,%s,%s,(SELECT COUNT(*)+1 FROM `%s` y WHERE y.%s > x.%s AND serverip='%s' AND (y.%s > 0 OR y.%s > 0) LIMIT 1) AS ranking FROM `%s` x WHERE x.serverip='%s' AND (x.%s > 0 OR x.%s > 0) ORDER BY %s DESC, %s DESC LIMIT %i, %i;",winsColumn,pointsColumn,streakColumn,sqlTable,pointsColumn,pointsColumn,serverip,winsColumn,pointsColumn,sqlTable,serverip,winsColumn,pointsColumn,pointsColumn,winsColumn,start,count);
+    else
+        formatex(statement,charsmax(statement),"SELECT authid,name,%s,%s,%s,(SELECT COUNT(*)+1 FROM `%s` y WHERE y.%s > x.%s AND serverip='%s' AND y.%s > 0 LIMIT 1) AS ranking FROM `%s` x WHERE x.serverip='%s' AND x.%s > 0 ORDER BY %s DESC LIMIT %i, %i;",winsColumn,pointsColumn,streakColumn,sqlTable,winsColumn,winsColumn,serverip,winsColumn,sqlTable,serverip,winsColumn,winsColumn,start,count);
+    gg_top_send(id,2,statement);
+}
+
+/**
+ * Render top page.
+ */
+stock gg_top_render_page(id,Handle:result)
+{
+	new ppp = get_pcvar_num(gg_top10_ppp);
+	if(ppp < 1) return;
+	new absPage = abs(page[id]), stats_split = get_pcvar_num(gg_stats_split), si = (page[id] < 0);
+	new playersPerPage = ppp, stats_mode = get_pcvar_num(gg_stats_mode);
+	new numRows = gg_top_rows[id], pageTotal = gg_top_pages[id];
+	new totalPlayers = playersPerPage * pageTotal;
+	new len;
+	if(stats_split) len = formatex(menuText,511,"\y%L %L (%i/%i)^n",id,"GUNGAME",id,(page[id] < 0) ? "STATS_TEAMPLAY" : "STATS_REGULAR",absPage,pageTotal);
+	else len = formatex(menuText,511,"\y%L %L (%i/%i)^n",id,"GUNGAME",id,"STATS",absPage,pageTotal);
+	
+	new start = (playersPerPage * (absPage-1));
+	
+	// show the top streak for the first page
+	new topStreak = gg_top_streak[id], champName[32], champAuthid[32];
+	copy(champName,31,gg_top_champ_name[id]);
+	copy(champAuthid,31,gg_top_champ_auth[id]);
+	if(absPage == 1 && !champName[0]) formatex(champName,31,"%L",id,"NO_ONE");
+
+	//len += formatex(menuText[len],511-len,"\d-----------\w^n");
+
+	new authid[32];
+	get_gg_authid(id,authid,31);	
+
+	gg_top_render_rows(id,result,numRows,absPage,pageTotal,totalPlayers,playersPerPage,stats_mode,si,start,len,champName,champAuthid,topStreak,authid);
+}
+/**
+ * Render top rows.
+ */
+stock gg_top_render_rows(id,Handle:query,numRows,absPage,pageTotal,totalPlayers,playersPerPage,stats_mode,si,start,len,champName[],champAuthid[],topStreak,authid[])
+{
+	new stats_split = get_pcvar_num(gg_stats_split);
+	new ranking, moreResults, lastRanking = start;
+	if(numRows) moreResults = SQL_MoreResults(query);
+
+	for(new i=start;i<start+playersPerPage;i++)
+	{
+		if(i >= totalPlayers) break;
+
+		// use the first slot to display the record streak
+		if(i == 0)
+		{
+			len += formatex(menuText[len],511-len,"%s%L^n",(equal(authid,champAuthid)) ? "\r" : "\w",id,"RECORD_STREAK",champName,topStreak);
+			continue;
+		}
+		
+		// all out of rows
+		if(!moreResults)
+		{
+			lastRanking++;
+			len += formatex(menuText[len],511-len,"\w#%i \d%L^n",lastRanking,id,"NONE");
+			continue;
+		}
+
+		SQL_ReadResult(query,0,sfStatsStruct[sdAuthid],31);
+		SQL_ReadResult(query,1,sfStatsStruct[sdName],31);
+		sfStatsStruct[sdWins][si] = SQL_ReadResult(query,2);
+		sfStatsStruct[sdPoints][si] = SQL_ReadResult(query,3);
+		sfStatsStruct[sdStreak][si] = SQL_ReadResult(query,4);
+		ranking = SQL_ReadResult(query,5);
+
+		if(stats_mode == 1)
+		{
+			if(sfStatsStruct[sdStreak][si] > 1) len += formatex(menuText[len],511-len,"%s#%i %s (%i %L, %L)^n",(equal(authid,sfStatsStruct[sdAuthid])) ? "\r" : "\w",ranking,sfStatsStruct[sdName],sfStatsStruct[sdWins][si],id,"WINS",id,"IN_A_ROW",sfStatsStruct[sdStreak][si]);
+			else len += formatex(menuText[len],511-len,"%s#%i %s (%i %L)^n",(equal(authid,sfStatsStruct[sdAuthid])) ? "\r" : "\w",ranking,sfStatsStruct[sdName],sfStatsStruct[sdWins][si],id,"WINS");
+		}
+		else
+		{
+			if(sfStatsStruct[sdStreak][si] > 1) len += formatex(menuText[len],511-len,"%s#%i %s (%i %L, %i %L, %L)^n",(equal(authid,sfStatsStruct[sdAuthid])) ? "\r" : "\w",ranking,sfStatsStruct[sdName],sfStatsStruct[sdPoints][si],id,"POINTS",sfStatsStruct[sdWins][si],id,"WINS",id,"IN_A_ROW",sfStatsStruct[sdStreak][si]);
+			else len += formatex(menuText[len],511-len,"%s#%i %s (%i %L, %i %L)^n",(equal(authid,sfStatsStruct[sdAuthid])) ? "\r" : "\w",ranking,sfStatsStruct[sdName],sfStatsStruct[sdPoints][si],id,"POINTS",sfStatsStruct[sdWins][si],id,"WINS");
+		}
+
+		SQL_NextRow(query);
+		moreResults = SQL_MoreResults(query);
+		
+		lastRanking = ranking;
+	}
+
+	
+
+	len += formatex(menuText[len],511-len,"\d-----------\w^n");
+
+	new keys = MENU_KEY_0;
+
+	if(absPage > 1)
+	{
+		len += formatex(menuText[len],511-len,"1. %L^n",id,"PREVIOUS");
+		keys |= MENU_KEY_1;
+	}
+	if(absPage < pageTotal)
+	{
+		len += formatex(menuText[len],511-len,"2. %L^n",id,"NEXT");
+		keys |= MENU_KEY_2;
+	}
+	if(statsPosition[id][si] > 0)
+	{
+		len += formatex(menuText[len],511-len,"3. %L^n",id,"JUMP_TO_ME");
+		keys |= MENU_KEY_3;
+	}
+	if(stats_split)
+	{
+		len += formatex(menuText[len],511-len,"4. %L^n",id,(page[id] < 0) ? "STATS_REGULAR" : "STATS_TEAMPLAY");
+		keys |= MENU_KEY_4;
+	}
+	len += formatex(menuText[len],511-len,"0. %L",id,"CLOSE");
+
+	show_menu(id,keys,menuText,-1,"top10_menu");
+}
+
+/**
+ * Display top10 menu file.
+ */
+show_top10_menu_file(id)
 {
 	new pppString[74], len = get_pcvar_string(gg_top10_ppp,pppString,63);
 	
@@ -3069,7 +3877,7 @@ show_top10_menu(id)
 	{
 		new header[32], lang[3];
 		formatex(header,31,"%L %L",id,"GUNGAME",id,"STATS");
-		get_user_info(id,"lang",lang,2);
+		gg_get_effective_language(id,lang);
 
 		formatex(pppString[len],73-len,"?i=%i&l=%s",id,lang);
 		show_motd(id,pppString,header);
@@ -3077,44 +3885,14 @@ show_top10_menu(id)
 		return;
 	}
 
-#if !defined SQL
 	recheck_stats_sorting();
-#endif
 	
 	new absPage = abs(page[id]), stats_split = get_pcvar_num(gg_stats_split), si = (page[id] < 0);
 
 	new playersPerPage = str_to_num(pppString), stats_mode = get_pcvar_num(gg_stats_mode);
 	//if(stats_split == 2) playersPerPage = 7;
 	
-#if defined SQL
-	new winsColumn[8], pointsColumn[10], streakColumn[10], totalPlayers, numRows;
-
-	if(si == 0)
-	{
-		winsColumn = "wins";
-		pointsColumn = "points";
-		streakColumn = "streak";
-	}
-	else
-	{
-		winsColumn = "wins_tp";
-		pointsColumn = "points_tp";
-		streakColumn = "streak_tp";
-	}
-	
-	if(stats_mode == 2) query = SQL_PrepareQuery(db,"SELECT NULL FROM `%s` WHERE serverip='%s' AND (%s > 0 OR %s > 0);",sqlTable,serverip,winsColumn,pointsColumn);
-	else query = SQL_PrepareQuery(db,"SELECT NULL FROM `%s` WHERE serverip='%s' AND %s > 0;",sqlTable,serverip,winsColumn);
-
-	if(SQL_ExecuteAndLog(query))
-	{
-		numRows = SQL_NumRows(query);
-		totalPlayers = playersPerPage * floatround(float(numRows+1) / float(playersPerPage),floatround_ceil);
-	}
-
-	SQL_FreeHandle(query);
-#else
 	new totalPlayers = playersPerPage * floatround(float(statsSize[si]+1) / float(playersPerPage),floatround_ceil); // +1 for streak display
-#endif
 		
 	new pageTotal = floatround(float(totalPlayers) / float(playersPerPage),floatround_ceil);
 	
@@ -3137,40 +3915,29 @@ show_top10_menu(id)
 	new topStreak, champName[32], champAuthid[32];
 	if(absPage == 1)
 	{
-#if defined SQL
-			query = SQL_PrepareQuery(db,"SELECT authid,streak,name FROM `%s` WHERE type='%iR' AND serverip='%s' LIMIT 1;",sqlStreakTable,si,serverip);
-			if(SQL_ExecuteAndLog(query) && SQL_NumResults(query))
-			{
-				SQL_ReadResult(query,0,champAuthid,31);
-				topStreak = SQL_ReadResult(query,1);
-				SQL_ReadResult(query,2,champName,31);
-			}
-			SQL_FreeHandle(query);
-#else
-			new sfStreak[4], stats_streak_file[64];
-			get_pcvar_string(gg_stats_streak_file,stats_streak_file,63);
+		new sfStreak[4], stats_streak_file[256];
+		copy(stats_streak_file,charsmax(stats_streak_file),gg_streak_path);
 
-			if(file_exists(stats_streak_file))
+		if(file_exists(stats_streak_file))
+		{
+			new file = fopen(stats_streak_file,"rt");
+			while(file && !feof(file))
 			{
-				new file = fopen(stats_streak_file,"rt");
-				while(file && !feof(file))
-				{
-					fgets(file,sfLineData,82);
+				fgets(file,sfLineData,82);
 
-					// blank, not for our stats mode, or not the record
-					if(!sfLineData[0] || str_to_num(sfLineData[0]) != si || sfLineData[1] != 'R') continue;
+				// blank, not for our stats mode, or not the record
+				if(!sfLineData[0] || str_to_num(sfLineData[0]) != si || sfLineData[1] != 'R') continue;
 					
-					strtok(sfLineData[3],champAuthid,31,sfLineData,82,'^t'); // cut off prefix and authid from the left
-					strtok(sfLineData,sfStreak,3,champName,31,'^t'); // get our streak, and the name as well
+				strtok2(sfLineData[3],champAuthid,31,sfLineData,82,'^t'); // cut off prefix and authid from the left
+				strtok2(sfLineData,sfStreak,3,champName,31,'^t'); // get our streak, and the name as well
 
-					new pos = contain_char(champName,'^t');
-					if(pos != -1) champName[pos] = 0; // cut off the name at the tab
+				new pos = contain_char(champName,'^t');
+				if(pos != -1) champName[pos] = 0; // cut off the name at the tab
 
-					topStreak = str_to_num(sfStreak);
-				}
-				if(file) fclose(file);
+				topStreak = str_to_num(sfStreak);
 			}
-#endif
+			if(file) fclose(file);
+		}
 
 		if(!champName[0]) formatex(champName,31,"%L",id,"NO_ONE");
 	}
@@ -3180,80 +3947,6 @@ show_top10_menu(id)
 	new authid[32];
 	get_gg_authid(id,authid,31);	
 
-#if defined SQL
-	if(numRows)
-	{
-		// do this to account for the streak display in our LIMIT clause
-		if(absPage == 1) playersPerPage--;
-		else start--;
-
-		if(stats_mode == 2)
-		{
-			query = SQL_PrepareQuery(db,"SELECT authid,name,%s,%s,%s,(SELECT COUNT(*)+1 FROM `%s` y WHERE y.%s > x.%s AND serverip='%s' AND (y.%s > 0 OR y.%s > 0) LIMIT 1) AS ranking FROM `%s` x WHERE x.serverip='%s' AND (x.%s > 0 OR x.%s > 0) ORDER BY %s DESC, %s DESC LIMIT %i, %i;",
-				winsColumn,pointsColumn,streakColumn,sqlTable,pointsColumn,pointsColumn,serverip,winsColumn,pointsColumn,sqlTable,serverip,winsColumn,pointsColumn,pointsColumn,winsColumn,start,playersPerPage);
-		}
-		else
-		{
-			query = SQL_PrepareQuery(db,"SELECT authid,name,%s,%s,%s,(SELECT COUNT(*)+1 FROM `%s` y WHERE y.%s > x.%s AND serverip='%s' AND y.%s > 0 LIMIT 1) AS ranking FROM `%s` x WHERE x.serverip='%s' AND x.%s > 0 ORDER BY %s DESC LIMIT %i, %i;",
-				winsColumn,pointsColumn,streakColumn,sqlTable,winsColumn,winsColumn,serverip,winsColumn,sqlTable,serverip,winsColumn,winsColumn,start,playersPerPage);
-		}
-		
-		// reverse changes made above for LIMIT
-		if(absPage == 1) playersPerPage++;
-		else start++;
-	}
-
-	if(!numRows || SQL_ExecuteAndLog(query))
-	{
-		new ranking, moreResults, lastRanking = start;
-		if(numRows) moreResults = SQL_MoreResults(query);
-
-		for(i=start;i<start+playersPerPage;i++)
-		{
-			if(i >= totalPlayers) break;
-
-			// use the first slot to display the record streak
-			if(i == 0)
-			{
-				len += formatex(menuText[len],511-len,"%s%L^n",(equal(authid,champAuthid)) ? "\r" : "\w",id,"RECORD_STREAK",champName,topStreak);
-				continue;
-			}
-			
-			// all out of rows
-			if(!moreResults)
-			{
-				lastRanking++;
-				len += formatex(menuText[len],511-len,"\w#%i \d%L^n",lastRanking,id,"NONE");
-				continue;
-			}
-	
-			SQL_ReadResult(query,0,sfStatsStruct[sdAuthid],31);
-			SQL_ReadResult(query,1,sfStatsStruct[sdName],31);
-			sfStatsStruct[sdWins][si] = SQL_ReadResult(query,2);
-			sfStatsStruct[sdPoints][si] = SQL_ReadResult(query,3);
-			sfStatsStruct[sdStreak][si] = SQL_ReadResult(query,4);
-			ranking = SQL_ReadResult(query,5);
-
-			if(stats_mode == 1)
-			{
-				if(sfStatsStruct[sdStreak][si] > 1) len += formatex(menuText[len],511-len,"%s#%i %s (%i %L, %L)^n",(equal(authid,sfStatsStruct[sdAuthid])) ? "\r" : "\w",ranking,sfStatsStruct[sdName],sfStatsStruct[sdWins][si],id,"WINS",id,"IN_A_ROW",sfStatsStruct[sdStreak][si]);
-				else len += formatex(menuText[len],511-len,"%s#%i %s (%i %L)^n",(equal(authid,sfStatsStruct[sdAuthid])) ? "\r" : "\w",ranking,sfStatsStruct[sdName],sfStatsStruct[sdWins][si],id,"WINS");
-			}
-			else
-			{
-				if(sfStatsStruct[sdStreak][si] > 1) len += formatex(menuText[len],511-len,"%s#%i %s (%i %L, %i %L, %L)^n",(equal(authid,sfStatsStruct[sdAuthid])) ? "\r" : "\w",ranking,sfStatsStruct[sdName],sfStatsStruct[sdPoints][si],id,"POINTS",sfStatsStruct[sdWins][si],id,"WINS",id,"IN_A_ROW",sfStatsStruct[sdStreak][si]);
-				else len += formatex(menuText[len],511-len,"%s#%i %s (%i %L, %i %L)^n",(equal(authid,sfStatsStruct[sdAuthid])) ? "\r" : "\w",ranking,sfStatsStruct[sdName],sfStatsStruct[sdPoints][si],id,"POINTS",sfStatsStruct[sdWins][si],id,"WINS");
-			}
-
-			SQL_NextRow(query);
-			moreResults = SQL_MoreResults(query);
-			
-			lastRanking = ranking;
-		}
-	}
-
-	if(numRows) SQL_FreeHandle(query);
-#else
 	for(i=start;i<start+playersPerPage;i++)
 	{
 		if(i >= totalPlayers) break;
@@ -3285,7 +3978,6 @@ show_top10_menu(id)
 			else len += formatex(menuText[len],511-len,"%s#%i %s (%i %L, %i %L)^n",(equal(authid,sfStatsStruct[sdAuthid])) ? "\r" : "\w",i/*+1-1*/,sfStatsStruct[sdName],sfStatsStruct[sdPoints][si],id,"POINTS",sfStatsStruct[sdWins][si],id,"WINS");
 		}
 	}
-#endif
 
 	len += formatex(menuText[len],511-len,"\d-----------\w^n");
 
@@ -3317,39 +4009,83 @@ show_top10_menu(id)
 }
 
 // someone pressed a key on the top10 list menu page
+/**
+ * Handle input for the top10 menu menu.
+ */
 public top10_menu_handler(id,key)
 {
-#if !defined SQL
+	if (!sqlInit) return;
+	if (gg_backend == 1) top10_menu_handler_sql(id,key);
+	else if (gg_backend == 0) top10_menu_handler_file(id,key);
+}
+
+/**
+ * Handle top10 menu handler sql processing.
+ */
+top10_menu_handler_sql(id,key)
+{
+    if(!is_user_connected(id)) return;
+    new si = (page[id] < 0), ppp = get_pcvar_num(gg_top10_ppp);
+    if(ppp < 1 || !page[id] || abs(page[id]) > gg_top_pages[id]) return;
+    gg_top_generation[id]++;
+    if(key == 0)
+    {
+        if(abs(page[id]) <= 1) return;
+        if(si) page[id]++; else page[id]--;
+        show_top10_menu_sql(id);
+    }
+    else if(key == 1)
+    {
+        if(abs(page[id]) >= gg_top_pages[id]) return;
+        if(si) page[id]--; else page[id]++;
+        show_top10_menu_sql(id);
+    }
+    else if(key == 2)
+    {
+        if(statsPosition[id][si] <= 0) return;
+        new authid[32], escaped[64], statement[1024], myPoints;
+        get_gg_authid(id,authid,31);
+        if(gg_sql_quote(escaped,charsmax(escaped),authid) < 0) return;
+        if(!gg_sql_menu_cache(id,authid))
+        {
+            show_top10_menu_sql(id);
+            return;
+        }
+        new winsColumn[8], pointsColumn[10];
+        copy(winsColumn,charsmax(winsColumn),si ? "wins_tp" : "wins");
+        copy(pointsColumn,charsmax(pointsColumn),si ? "points_tp" : "points");
+        if(get_pcvar_num(gg_stats_mode) == 2)
+        {
+            myPoints = playerStats[id][sdPoints][si];
+            formatex(statement,charsmax(statement),"SELECT authid FROM `%s` WHERE %s='%i' AND serverip='%s' ORDER BY %s, %s DESC;",sqlTable,pointsColumn,myPoints,serverip,pointsColumn,winsColumn);
+        }
+        else
+        {
+            myPoints = playerStats[id][sdWins][si];
+            formatex(statement,charsmax(statement),"SELECT authid FROM `%s` WHERE %s='%i' AND serverip='%s' ORDER BY %s DESC;",sqlTable,winsColumn,myPoints,serverip,winsColumn);
+        }
+        gg_top_send(id,3,statement);
+    }
+    else if(key == 3 && get_pcvar_num(gg_stats_split))
+    {
+        page[id] *= -1;
+        show_top10_menu_sql(id);
+    }
+}
+
+/**
+ * Handle top10 menu handler file processing.
+ */
+top10_menu_handler_file(id,key)
+{
 	recheck_stats_sorting();
-#endif
 	
 	new si = (page[id] < 0);
 	
 	new playersPerPage = get_pcvar_num(gg_top10_ppp);
 	//if(get_pcvar_num(gg_stats_split) == 2) playersPerPage = 7;
 	
-#if defined SQL
-	new winsColumn[8], pointsColumn[10], totalPlayers, stats_mode = get_pcvar_num(gg_stats_mode);
-
-	if(si == 0)
-	{
-		winsColumn = "wins";
-		pointsColumn = "points";
-	}
-	else
-	{
-		winsColumn = "wins_tp";
-		pointsColumn = "points_tp";
-	}
-	
-	if(stats_mode == 2) query = SQL_PrepareQuery(db,"SELECT NULL FROM `%s` WHERE serverip='%s' AND (%s > 0 OR %s > 0);",sqlTable,serverip,winsColumn,pointsColumn);
-	else query = SQL_PrepareQuery(db,"SELECT NULL FROM `%s` WHERE serverip='%s' AND %s > 0;",sqlTable,serverip,winsColumn);
-
-	if(SQL_ExecuteAndLog(query)) totalPlayers = playersPerPage * floatround(float(SQL_NumRows(query)+1) / float(playersPerPage),floatround_ceil);
-	SQL_FreeHandle(query);
-#else
 	new totalPlayers = playersPerPage * floatround(float(statsSize[si]+1) / float(playersPerPage),floatround_ceil); // +1 for streak display
-#endif
 
 	new pageTotal = floatround(float(totalPlayers) / float(playersPerPage),floatround_ceil);
 	if(pageTotal < 1) pageTotal = 1;
@@ -3377,55 +4113,6 @@ public top10_menu_handler(id,key)
 	// 3. Jump to me
 	else if(key == 2)
 	{
-#if defined SQL
-		if(statsPosition[id][si] > 0)
-		{
-			// using SQL stats, players can have tied rankings (ie: 1st, 1st, 3rd). so, if we know a player's ranking, we don't necessarily know
-			// what page they're on (they could be the last of 20 players all tied for 1st, for example). however, we do know what position (and
-			// therefore also the page) that their ranking starts on. then we can select everyone with an equal score, and process the results
-			// until we find their authid, to see how many positions off they are from the start of their ranking. then find the page for that.
-
-			new authid[32], myPoints;
-			get_gg_authid(id,authid,31);
-
-			stats_get_data(authid,playerStats[id],id);
-
-			if(stats_mode == 2)
-			{
-				myPoints = playerStats[id][sdPoints][si];
-				query = SQL_PrepareQuery(db,"SELECT authid FROM `%s` WHERE %s='%i' AND serverip='%s' ORDER BY %s, %s DESC;",sqlTable,pointsColumn,myPoints,serverip,pointsColumn,winsColumn);
-			}
-			else
-			{
-				myPoints = playerStats[id][sdWins][si];
-				query = SQL_PrepareQuery(db,"SELECT authid FROM `%s` WHERE %s='%i' AND serverip='%s' ORDER BY %s DESC;",sqlTable,winsColumn,myPoints,serverip,winsColumn);
-			}
-			
-			if(SQL_ExecuteAndLog(query))
-			{
-				new position = statsPosition[id][si]; // start at my position
-
-				if(SQL_NumRows(query) > 1) // if I'm the only one with my score, no searching is necessary
-				{
-					new rowAuthid[32];
-					while(SQL_MoreResults(query))
-					{
-						SQL_ReadResult(query,0,rowAuthid,31);
-						if(equal(authid,rowAuthid)) break;
-						
-						position++;
-						SQL_NextRow(query);
-					}
-				}
-			
-				new negative = (page[id] < 0);
-				page[id] = floatround(float(position) / float(playersPerPage),floatround_floor) + 1;
-				if(negative) page[id] *= -1;
-			}
-			
-			SQL_FreeHandle(query);
-		}	
-#else
 		if(statsPosition[id][si] > 0)
 		{
 			// this method of finding the page is slightly different from the weapons and scores menu because
@@ -3436,7 +4123,6 @@ public top10_menu_handler(id,key)
 			page[id] = floatround(float(statsPosition[id][si]) / float(playersPerPage),floatround_floor) + 1;
 			if(negative) page[id] *= -1;
 		}
-#endif
 		show_top10_menu(id);
 	}
 	
@@ -3452,6 +4138,9 @@ public top10_menu_handler(id,key)
 }
 
 // show the weapon list menu
+/**
+ * Display weapons menu.
+ */
 show_weapons_menu(id)
 {
 	new totalWeapons = weaponNum, wpnsPerPage = 10;
@@ -3513,6 +4202,9 @@ show_weapons_menu(id)
 }
 
 // someone pressed a key on the weapon list menu page
+/**
+ * Handle input for the weapons menu menu.
+ */
 public weapons_menu_handler(id,key)
 {
 	new wpnsPerPage = 10, pageTotal = floatround(float(weaponNum) / float(wpnsPerPage),floatround_ceil);
@@ -3547,11 +4239,15 @@ public weapons_menu_handler(id,key)
 }
 
 // show the score list menu
+/**
+ * Display scores menu.
+ */
 show_scores_menu(id)
 {
-#if !defined SQL
-	recheck_stats_sorting();
-#endif
+	if (gg_backend == 0)
+	{
+		recheck_stats_sorting();
+	}
 
 	new keys, len, teamplay = get_pcvar_num(gg_teamplay);
 
@@ -3585,14 +4281,14 @@ show_scores_menu(id)
 	}
 	else
 	{
-		new totalPlayers = get_playersnum(), playersPerPage = 7, stats_mode = get_pcvar_num(gg_stats_mode);
+		new totalPlayers = get_playersnum_ex(), playersPerPage = 7, stats_mode = get_pcvar_num(gg_stats_mode);
 		new pageTotal = floatround(float(totalPlayers) / float(playersPerPage),floatround_ceil);
 
 		if(page[id] < 1) page[id] = 1;
 		if(page[id] > pageTotal) page[id] = pageTotal;
 
 		new players[32], num;
-		get_players(players,num);
+		get_players_ex(players,num);
 
 		// order by highest level first
 		SortCustom1D(players,num,"score_custom_compare");
@@ -3618,7 +4314,12 @@ show_scores_menu(id)
 			if(sqlInit && stats_mode)
 			{
 				get_gg_authid(player,authid,31,stats_ip);
-				stats_get_data(authid,playerStats[player],player);
+				if(gg_backend == 1 && !gg_sql_menu_cache(player,authid))
+				{
+					len += formatex(menuText[len],511-len,"#%i %s, %L %i (%s) %i/%i^n",i+1,name,id,"LEVEL",level[player],displayWeapon,score[player],get_level_goal(level[player],player));
+					continue;
+				}
+				if(gg_backend == 0) stats_get_data(authid,playerStats[player],player);
 
 				if(statsPosition[player][si] > 0)
 				{
@@ -3655,6 +4356,9 @@ show_scores_menu(id)
 }
 
 // sort list of players with their level first
+/**
+ * Handle score custom compare processing.
+ */
 public score_custom_compare(elem1,elem2)
 {
 	// invalid players
@@ -3677,9 +4381,12 @@ public score_custom_compare(elem1,elem2)
 }
 
 // someone pressed a key on the score list menu page
+/**
+ * Handle input for the scores menu menu.
+ */
 public scores_menu_handler(id,key)
 {
-	new totalPlayers = get_playersnum(), playersPerPage = 7;
+	new totalPlayers = get_playersnum_ex(), playersPerPage = 7;
 	new pageTotal = floatround(float(totalPlayers) / float(playersPerPage),floatround_ceil);
 
 	if(page[id] < 1 || page[id] > pageTotal) return;
@@ -3704,7 +4411,7 @@ public scores_menu_handler(id,key)
 	else if(key == 2)
 	{
 		new players[32], num, i;
-		get_players(players,num);
+		get_players_ex(players,num);
 		SortCustom1D(players,num,"score_custom_compare");
 		
 		for(i=0;i<num;i++)
@@ -3725,6 +4432,14 @@ public scores_menu_handler(id,key)
 //**********************************************************************
 
 // toggle the status of gungame
+
+// ============================================================================
+// GUNGAME ACTIVATION, CONFIGURATION AND GAMEPLAY TASKS
+// ============================================================================
+
+/**
+ * Toggle gungame.
+ */
 public toggle_gungame(taskid)
 {
 	new status = taskid-TASK_TOGGLE_GUNGAME, i;
@@ -3743,6 +4458,36 @@ public toggle_gungame(taskid)
 		// these allow toggling of GunGame on/off
 		exec_gg_config_file(0,1); // run the regular config file
 		if(get_pcvar_num(gg_teamplay)) exec_gg_config_file(1,1); // if teamplay, run the teamplay config file also
+		if (gg_backend == -1)
+		{
+			gg_backend = get_pcvar_num(gg_stats_backend);
+			if (gg_backend != 0 && gg_backend != 1)
+			{
+				log_amx("Invalid gg_stats_backend; statistics disabled for this map");
+				gg_backend = -2;
+			}
+			if (gg_backend == 0)
+			{
+				log_amx("Statistics backend: Local file storage");
+				sqlInit = gg_file_init();
+			}
+			else if (gg_backend == 1 && !gg_sql_missing)
+			{
+				log_amx("Statistics backend: MySQL / MariaDB");
+				sql_init();
+			}
+			else if (gg_backend == 1) log_amx("SQL natives unavailable; statistics disabled (no file fallback)");
+			if (sqlInit && gg_refresh_on_join())
+			{
+				new authid[32];
+				for (new client = 1; client <= maxPlayers; client++)
+					if (is_user_connected(client))
+					{
+						get_gg_authid(client, authid, charsmax(authid));
+						stats_refresh_timestamp(authid);
+					}
+			}
+		}
 	}
 
 	// set to what we chose from amx_gungame
@@ -3765,6 +4510,7 @@ public toggle_gungame(taskid)
 		// clear HUD message
 		if(warmup > 0) ClearSyncHud(0,hudSyncWarmup);
 
+		gg_match_started_at = -1.0;
 		warmup = -1;
 		warmupWeapon[0] = 0;
 		voted = 0;
@@ -3774,11 +4520,14 @@ public toggle_gungame(taskid)
 	}
 
 	// we need to get these stats (GunGame is on, we don't have them, and we aren't in the process of getting them)
-#if defined SQL
-	if(ggActive && !task_exists(TASK_GET_TOP_PLAYERS)) stats_get_top_players(); // there is no statsArray for SQL
-#else
-	if(ggActive && !statsArray && !task_exists(TASK_GET_TOP_PLAYERS)) stats_get_top_players();
-#endif
+	if (gg_backend == 1)
+	{
+		if(ggActive && !task_exists(TASK_GET_TOP_PLAYERS)) stats_get_top_players(); // there is no statsArray for SQL
+	}
+	else
+	{
+		if(ggActive && !statsArray && !task_exists(TASK_GET_TOP_PLAYERS)) stats_get_top_players();
+	}
 
 	// game_player_equip
 	manage_equips();
@@ -3790,31 +4539,14 @@ public toggle_gungame(taskid)
 	// warmup weapon may've change
 	if(warmup > 0) get_pcvar_string(gg_warmup_weapon,warmupWeapon,23);
 	
-#if defined SQL
-		// fire up the engines!!
-		if(!sqlInit)
-		{
-			sql_init();
-			
-			// because we can't refresh timestamps before SQL is initiated, refresh timestamps for people who joined before this
-#if defined REFRESH_TIMESTAMP_ON_JOIN
-				new authid[32];
-				for(new i=1;i<=maxPlayers;i++)
-				{
-					if(is_user_connected(i))
-					{
-						get_gg_authid(i,authid,31);
-						stats_refresh_timestamp(authid);
-					}
-				}
-#endif // REFRESH_TIMESTAMP_ON_JOIN
-		}
-#endif // SQL
 }
 
 // run cvars that should be run on map start
 //
 // see declaration of d_rOrder for explanation of keepTeamplay
+/**
+ * Start map cvars.
+ */
 public map_start_cvars(keepTeamplay)
 {
 	new setup[512];
@@ -3839,6 +4571,9 @@ public map_start_cvars(keepTeamplay)
 	}
 }
 
+/**
+ * Handle precache sounds from config processing.
+ */
 precache_sounds_from_config()
 {
 	new cfgFile[64], command[WINSOUNDS_SIZE+32], cvar[32], value[WINSOUNDS_SIZE], file, i, pos, len;
@@ -3910,15 +4645,19 @@ precache_sounds_from_config()
 }
 
 // manage stats pruning
+/**
+ * Manage pruning.
+ */
 public manage_pruning()
 {
 	// stats disabled/file doesn't exist/pruning disabled
 	if(!sqlInit || !get_pcvar_num(gg_stats_mode) || !get_pcvar_num(gg_stats_prune)) return;
 
-#if !defined SQL
-	get_pcvar_string(gg_stats_file,sfFile,63);
-	if(!file_exists(sfFile)) return; // no existy
-#endif
+	if (gg_backend == 0)
+	{
+		// Statistics path resolved during backend initialization.
+		if(!file_exists(sfFile)) return; // no existy
+	}
 	
 	// get how many plugin loads more until we prune
 	new prune_in_str[3], prune_in;
@@ -3939,11 +4678,14 @@ public manage_pruning()
 		new result = stats_prune();
 		if(result != -1)
 		{
-#if defined SQL
+if (gg_backend == 1)
+{
 			log_amx("%L",LANG_SERVER,"PRUNING",sqlTable,result);
-#else
+}
+else
+{
 			log_amx("%L",LANG_SERVER,"PRUNING",sfFile,result);
-#endif
+}
 		}
 
 		set_localinfo("gg_prune_in","10"); // reset our prune count
@@ -3956,6 +4698,9 @@ public manage_pruning()
 }
 
 // manage warmup mode
+/**
+ * Check warmup.
+ */
 public warmup_check(taskid)
 {
 	warmup--;
@@ -3973,10 +4718,13 @@ public warmup_check(taskid)
 	}
 
 	ShowSyncHudMsg(0,hudSyncWarmup,"%L",LANG_PLAYER,"WARMUP_ROUND_DISPLAY",warmup);
-	set_task(1.0,"warmup_check",taskid);
+	set_task_ex(1.0,"warmup_check",taskid);
 }
 
 // show the leader display
+/**
+ * Display leader display.
+ */
 public show_leader_display()
 {
 	static Float:lastDisplay, lastLeader, lastLevel, leaderName[32];
@@ -3989,7 +4737,7 @@ public show_leader_display()
 	
 	// keep it going
 	if(!task_exists(TASK_LEADER_DISPLAY))
-		set_task(LEADER_DISPLAY_RATE,"show_leader_display",TASK_LEADER_DISPLAY,_,_,"b");
+		set_task_ex(LEADER_DISPLAY_RATE,"show_leader_display",TASK_LEADER_DISPLAY,_,_,SetTask_Repeat);
 
 	// don't show during warmup or game over
 	if(warmup > 0 || won) return 0;
@@ -4032,6 +4780,9 @@ public show_leader_display()
 }
 
 // show the nice HUD progress display
+/**
+ * Display progress display.
+ */
 show_progress_display(id)
 {
 	static statusString[48];
@@ -4105,7 +4856,7 @@ show_progress_display(id)
 				static numWord[16], lang[3];
 
 				// if english, use words, otherwise use digits
-				get_user_info(id,"lang",lang,2);
+				gg_get_effective_language(id,lang);
 				if(equali(lang,"en"))
 				{
 					num_to_word(numLeaders-1,numWord,15);
@@ -4123,6 +4874,9 @@ show_progress_display(id)
 }
 
 // play the taken/tied/lost lead sounds
+/**
+ * Play lead sounds.
+ */
 public play_lead_sounds(id,oldLevel,Float:playDelay)
 {
 	// id: the player whose level changed
@@ -4160,7 +4914,7 @@ public play_lead_sounds(id,oldLevel,Float:playDelay)
 			params[1] = gg_sound_tiedlead;
 			
 			remove_task(TASK_PLAY_LEAD_SOUNDS+id);
-			set_task(playDelay,"play_sound_by_cvar_task",TASK_PLAY_LEAD_SOUNDS+id,params,2);
+			set_task_ex(playDelay,"play_sound_by_cvar_task",TASK_PLAY_LEAD_SOUNDS+id,params,2);
 		}
 		
 		// just me, I'm the winner!
@@ -4174,7 +4928,7 @@ public play_lead_sounds(id,oldLevel,Float:playDelay)
 				params[1] = gg_sound_takenlead;
 				
 				remove_task(TASK_PLAY_LEAD_SOUNDS+id);
-				set_task(playDelay,"play_sound_by_cvar_task",TASK_PLAY_LEAD_SOUNDS+id,params,2);
+				set_task_ex(playDelay,"play_sound_by_cvar_task",TASK_PLAY_LEAD_SOUNDS+id,params,2);
 			}
 		}
 	}
@@ -4187,7 +4941,7 @@ public play_lead_sounds(id,oldLevel,Float:playDelay)
 		params[1] = gg_sound_lostlead;
 		
 		remove_task(TASK_PLAY_LEAD_SOUNDS+id);
-		set_task(playDelay,"play_sound_by_cvar_task",TASK_PLAY_LEAD_SOUNDS+id,params,2);
+		set_task_ex(playDelay,"play_sound_by_cvar_task",TASK_PLAY_LEAD_SOUNDS+id,params,2);
 
 		//return; // will not effect other players
 	}
@@ -4217,7 +4971,7 @@ public play_lead_sounds(id,oldLevel,Float:playDelay)
 				params[1] = gg_sound_tiedlead;
 				
 				remove_task(TASK_PLAY_LEAD_SOUNDS+player);
-				set_task(0.1,"play_sound_by_cvar_task",TASK_PLAY_LEAD_SOUNDS+player,params,2);
+				set_task_ex(0.1,"play_sound_by_cvar_task",TASK_PLAY_LEAD_SOUNDS+player,params,2);
 			}
 
 			continue;
@@ -4234,7 +4988,7 @@ public play_lead_sounds(id,oldLevel,Float:playDelay)
 				params[1] = gg_sound_lostlead;
 				
 				remove_task(TASK_PLAY_LEAD_SOUNDS+player);
-				set_task(0.1,"play_sound_by_cvar_task",TASK_PLAY_LEAD_SOUNDS+player,params,2);
+				set_task_ex(0.1,"play_sound_by_cvar_task",TASK_PLAY_LEAD_SOUNDS+player,params,2);
 			}
 
 			continue;
@@ -4251,7 +5005,7 @@ public play_lead_sounds(id,oldLevel,Float:playDelay)
 				params[1] = gg_sound_takenlead;
 				
 				remove_task(TASK_PLAY_LEAD_SOUNDS+player);
-				set_task(0.1,"play_sound_by_cvar_task",TASK_PLAY_LEAD_SOUNDS+player,params,2);
+				set_task_ex(0.1,"play_sound_by_cvar_task",TASK_PLAY_LEAD_SOUNDS+player,params,2);
 			}
 
 			continue;
@@ -4260,6 +5014,9 @@ public play_lead_sounds(id,oldLevel,Float:playDelay)
 }
 
 // manage game_player_equip and player_weaponstrip entities
+/**
+ * Manage equips.
+ */
 public manage_equips()
 {
 	static classname[20], targetname[24];
@@ -4325,9 +5082,189 @@ public manage_equips()
 	}
 }
 
+// Apply the original handicap formula without re-entering the spawn handler.
+
+// ============================================================================
+// HANDICAP CALCULATION AND DEFERRED SPAWN PROCESSING
+// ============================================================================
+
+/**
+ * Apply handicap.
+ */
+stock gg_handicap_apply(id,handicapMode,rcvHandicap)
+{
+	if(rcvHandicap)
+	{
+		new player;
+
+		// find lowest level (don't use bots unless we have to)
+		if(handicapMode == 2)
+		{
+			new isBot, myLevel, lowestLevel, lowestBotLevel;
+			for(player=1;player<=maxPlayers;player++)
+			{
+				if(!is_user_connected(player) || player == id)
+					continue;
+
+				isBot = is_user_bot(player);
+				myLevel = level[player];
+
+				if(!myLevel) continue;
+
+				if(!isBot && (!lowestLevel || myLevel < lowestLevel))
+					lowestLevel = myLevel;
+				else if(isBot && (!lowestBotLevel || myLevel < lowestBotLevel))
+					lowestBotLevel = myLevel;
+			}
+
+			// CLAMP!
+			if(!lowestLevel) lowestLevel = 1;
+			if(!lowestBotLevel) lowestBotLevel = 1;
+
+			change_level(id,(lowestLevel > 1) ? lowestLevel : lowestBotLevel,1,_,1); // just joined, always score
+		}
+
+		// find average level
+		else
+		{
+			new Float:average, num;
+			for(player=1;player<=maxPlayers;player++)
+			{
+				if(is_user_connected(player) && level[player])
+				{
+					average += float(level[player]);
+					num++;
+				}
+			}
+
+			if(num > 0) average /= float(num);
+			change_level(id,(average >= 0.5) ? floatround(average) : 1,1,_,1); // just joined, always score
+		}
+	}
+
+	// not eligible for handicap (in top10 with gg_top10_handicap disabled)
+	else change_level(id,1,1,_,1); // just joined, always score
+	if(gg_debug_active(gg_debug_handicap,2)) log_amx("[GG-SQL-DEBUG] handicap applied slot=%i mode=%i eligible=%i level=%i",id,handicapMode,rcvHandicap,level[id]);
+}
+
+// A pending first spawn is resumed only for its original connection and match.
+/**
+ * Defer handicap.
+ */
+stock gg_handicap_defer(id,authid[])
+{
+    if(!gg_handicap_pending[id] || gg_handicap_userid[id] != get_user_userid(id) || !equal(gg_handicap_auth[id],authid) || gg_handicap_match[id] != mapIteration)
+    {
+        gg_handicap_retry[id] = 0;
+        gg_handicap_userid[id] = get_user_userid(id);
+        gg_handicap_match[id] = mapIteration;
+        copy(gg_handicap_auth[id],31,authid);
+    }
+    gg_handicap_pending[id] = 1;
+    if(gg_sql_load_state[id] != GG_STATS_LOADING)
+        gg_sql_prefetch_player(id,authid);
+    gg_handicap_generation[id] = gg_sql_load_generation[id];
+    if(gg_debug_active(gg_debug_handicap,2)) log_amx("[GG-SQL-DEBUG] handicap deferred slot=%i userid=%i generation=%i spawn=%i",id,gg_handicap_userid[id],gg_handicap_generation[id],gg_handicap_spawn_serial[id]);
+    if(gg_sql_load_state[id] == GG_STATS_FAILED) gg_handicap_resume(id,1);
+}
+
+// Delay only the decision, never retain a SQL result handle outside its callback.
+/**
+ * Dispatch handicap.
+ */
+stock gg_handicap_dispatch(id,failed)
+{
+    new Float:delay = get_pcvar_float(gg_debug_handicap_delay);
+    if(delay <= 0.0 || is_user_bot(id) || !gg_handicap_pending[id])
+    {
+        gg_handicap_resume(id,failed);
+        return;
+    }
+    if(delay > 30.0) delay = 30.0;
+    new args[37];
+    args[0] = id;
+    args[1] = gg_handicap_userid[id];
+    args[2] = gg_handicap_generation[id];
+    args[3] = gg_handicap_match[id];
+    args[4] = failed;
+    copy(args[5],31,gg_handicap_auth[id]);
+    remove_task(TASK_HANDICAP_DELAY+id);
+    gg_handicap_delay_generation[id] = args[2];
+    set_task_ex(delay,"gg_handicap_delayed",TASK_HANDICAP_DELAY+id,args,sizeof args);
+    log_amx("[GG-SQL-DEBUG] handicap delay scheduled slot=%i userid=%i generation=%i match=%i seconds=%.2f failed=%i",id,args[1],args[2],args[3],delay,failed);
+}
+
+/**
+ * Handle handicap delayed processing.
+ */
+public gg_handicap_delayed(args[],taskid)
+{
+    new id = taskid-TASK_HANDICAP_DELAY;
+    if(id < 1 || id > maxPlayers || id != args[0]) return;
+    new authid[32];
+    if(is_user_connected(id)) get_gg_authid(id,authid,31);
+    if(!is_user_connected(id) || get_user_userid(id) != args[1] || mapIteration != args[3] || gg_sql_load_generation[id] != args[2] || !gg_handicap_pending[id] || gg_handicap_generation[id] != args[2] || !equal(authid,args[5]))
+    {
+        log_amx("[GG-SQL-DEBUG] handicap delay discarded slot=%i userid=%i generation=%i match=%i",id,args[1],args[2],args[3]);
+        return;
+    }
+    log_amx("[GG-SQL-DEBUG] handicap delay released slot=%i userid=%i generation=%i",id,args[1],args[2]);
+    gg_handicap_resume(id,args[4]);
+}
+
+/**
+ * Resume handicap.
+ */
+stock gg_handicap_resume(id,failed)
+{
+    if(id < 1 || id > maxPlayers || !gg_handicap_pending[id]) return;
+    if(!is_user_connected(id) || get_user_userid(id) != gg_handicap_userid[id] || gg_handicap_match[id] != mapIteration || gg_handicap_generation[id] != gg_sql_load_generation[id])
+    {
+        if(gg_debug_active(gg_debug_handicap,2)) log_amx("[GG-SQL-DEBUG] handicap discarded slot=%i reason=connection_match_generation level=%i",id,level[id]);
+        gg_handicap_pending[id] = 0;
+        return;
+    }
+    new authid[32];
+    get_gg_authid(id,authid,31);
+    if(!equal(authid,gg_handicap_auth[id]))
+    {
+        if(gg_debug_active(gg_debug_handicap,2)) log_amx("[GG-SQL-DEBUG] handicap discarded slot=%i reason=identity level=%i",id,level[id]);
+        gg_handicap_pending[id] = 0;
+        return;
+    }
+    if(!ggActive || won || !on_valid_team(id) || level[id] || !is_user_alive(id))
+    {
+        if(gg_debug_active(gg_debug_handicap,2)) log_amx("[GG-SQL-DEBUG] handicap discarded slot=%i reason=spawn_state level=%i",id,level[id]);
+        gg_handicap_pending[id] = 0;
+        return;
+    }
+    // A changed mode is handled conservatively rather than applying stale ranking.
+    if(failed || !sqlInit || gg_backend != 1 || !get_pcvar_num(gg_stats_mode) || get_pcvar_num(gg_top10_handicap) || get_pcvar_num(gg_teamplay) || warmup > 0)
+    {
+        gg_handicap_pending[id] = 0;
+        if(gg_debug_active(gg_debug_handicap,2)) log_amx("[GG-SQL-DEBUG] handicap fallback slot=%i failed=%i",id,failed);
+        change_level(id,1,1,_,1);
+    }
+    else
+    {
+        if(gg_sql_load_state[id] != GG_STATS_READY) return;
+        new si = get_gg_si();
+        new eligible = !(statsPosition[id][si] > 0 && statsPosition[id][si] <= TOP_PLAYERS);
+        gg_handicap_pending[id] = 0;
+        if(gg_debug_active(gg_debug_handicap,2)) log_amx("[GG-SQL-DEBUG] handicap resolved slot=%i rank=%i eligible=%i",id,statsPosition[id][si],eligible);
+        if(!eligible && gg_debug_active(gg_debug_handicap,2)) log_amx("[GG-SQL-DEBUG] handicap excluded slot=%i reason=top10",id);
+        gg_handicap_apply(id,get_pcvar_num(gg_handicap_on),eligible);
+    }
+    if(level[id] > 0 && is_user_alive(id)) gg_spawn_finalize(id);
+}
+
 // someone respawned
+/**
+ * Handle spawned processing.
+ */
 spawned(id)
 {
+	gg_handicap_spawn_serial[id]++;
 	// should be filtered in ham hook
 	if(/*!ggActive || !is_user_connected(id) ||*/ !on_valid_team(id))
 		return;
@@ -4380,83 +5317,43 @@ spawned(id)
 			{
 				new rcvHandicap = 1;
 
-				// top10 doesn't receive handicap -- also make sure we are using top10
+				// SQL ranking must be resolved asynchronously before first-level selection.
 				if(sqlInit && !get_pcvar_num(gg_top10_handicap) && get_pcvar_num(gg_stats_mode))
 				{
 					static authid[32];
 					get_gg_authid(id,authid,31);
-					
 					new si = get_gg_si();
-#if defined SQL
-					if(!statsPosition[id][si]) statsPosition[id][si] = stats_get_position(id,authid,si);
-					if(0 < statsPosition[id][si] && statsPosition[id][si] <= TOP_PLAYERS) rcvHandicap = 0; // I'm in the top10
-#else
-					for(new i=0;i<TOP_PLAYERS;i++)
+					if(gg_backend == 1)
 					{
-						if(i >= statsSize[si]) continue;
-						ArrayGetArray(statsArray,ArrayGetCell(statsPointers[si],i),sfStatsStruct);
-
-						// I'm in top10, don't give me handicap
-						if(equal(authid,sfStatsStruct[sdAuthid]))
+						// A respawn must not bypass a delayed first-level decision.
+						if(gg_handicap_pending[id] && task_exists(TASK_HANDICAP_DELAY+id) && gg_handicap_delay_generation[id] == gg_sql_load_generation[id])
 						{
-							rcvHandicap = 0;
-							break;
+						    log_amx("[GG-SQL-DEBUG] handicap delay waiting slot=%i spawn=%i",id,gg_handicap_spawn_serial[id]);
+						    return;
 						}
-					}
-#endif
-				}
-
-				if(rcvHandicap)
-				{
-					new player;
-
-					// find lowest level (don't use bots unless we have to)
-					if(handicapMode == 2)
-					{
-						new isBot, myLevel, lowestLevel, lowestBotLevel;
-						for(player=1;player<=maxPlayers;player++)
+						// Force a fresh asynchronous read for a human first-spawn debug test.
+						if(!is_user_bot(id) && (get_pcvar_float(gg_debug_handicap_delay) > 0.0 || get_pcvar_num(gg_debug_handicap_fault) == 1 || get_pcvar_num(gg_debug_handicap_fault) == 2) && !gg_handicap_pending[id] && gg_sql_load_state[id] == GG_STATS_READY)
+							gg_sql_invalidate_player(id);
+						if(gg_sql_load_state[id] != GG_STATS_READY || !equal(gg_sql_load_auth[id],authid) || !equal(playerStats[id][sdAuthid],authid))
 						{
-							if(!is_user_connected(player) || player == id)
-								continue;
-
-							isBot = is_user_bot(player);
-							myLevel = level[player];
-
-							if(!myLevel) continue;
-
-							if(!isBot && (!lowestLevel || myLevel < lowestLevel))
-								lowestLevel = myLevel;
-							else if(isBot && (!lowestBotLevel || myLevel < lowestBotLevel))
-								lowestBotLevel = myLevel;
+							gg_handicap_defer(id,authid);
+							return;
 						}
-
-						// CLAMP!
-						if(!lowestLevel) lowestLevel = 1;
-						if(!lowestBotLevel) lowestBotLevel = 1;
-
-						change_level(id,(lowestLevel > 1) ? lowestLevel : lowestBotLevel,1,_,1); // just joined, always score
+						if(0 < statsPosition[id][si] && statsPosition[id][si] <= TOP_PLAYERS) rcvHandicap = 0;
+						if(gg_debug_active(gg_debug_handicap,2)) log_amx("[GG-SQL-DEBUG] handicap cache hit slot=%i rank=%i eligible=%i generation=%i",id,statsPosition[id][si],rcvHandicap,gg_sql_load_generation[id]);
+						if(!rcvHandicap && gg_debug_active(gg_debug_handicap,2)) log_amx("[GG-SQL-DEBUG] handicap excluded slot=%i reason=top10",id);
 					}
-
-					// find average level
 					else
 					{
-						new Float:average, num;
-						for(player=1;player<=maxPlayers;player++)
+						for(new i=0;i<TOP_PLAYERS;i++)
 						{
-							if(is_user_connected(player) && level[player])
-							{
-								average += float(level[player]);
-								num++;
-							}
+							if(i >= statsSize[si]) continue;
+							ArrayGetArray(statsArray,ArrayGetCell(statsPointers[si],i),sfStatsStruct);
+							if(equal(authid,sfStatsStruct[sdAuthid])) { rcvHandicap = 0; break; }
 						}
-
-						average /= float(num);
-						change_level(id,(average >= 0.5) ? floatround(average) : 1,1,_,1); // just joined, always score
 					}
 				}
-
-				// not eligible for handicap (in top10 with gg_top10_handicap disabled)
-				else change_level(id,1,1,_,1); // just joined, always score
+				gg_handicap_apply(id,handicapMode,rcvHandicap);
 			}
 
 			// no handicap enabled or playing teamplay
@@ -4496,6 +5393,7 @@ spawned(id)
 	// didn't just join
 	else
 	{
+		if(gg_debug_active(gg_debug_handicap,3)) log_amx("[GG-SQL-DEBUG] handicap skipped slot=%i reason=already_initialized level=%i",id,level[id]);
 		if(star[id])
 		{
 			end_star(TASK_END_STAR+id);
@@ -4522,6 +5420,15 @@ spawned(id)
 		refill_ammo(id);
 	}
 
+	if(level[id] > 0) gg_spawn_finalize(id);
+}
+
+// Complete spawn-only effects without restarting the spawn handler.
+/**
+ * Handle spawn finalize processing.
+ */
+stock gg_spawn_finalize(id)
+{
 	// show welcome message
 	if(!welcomed[id] && get_pcvar_num(gg_join_msg))
 		show_welcome(id);
@@ -4574,9 +5481,13 @@ spawned(id)
 		pev(id,pev_v_angle,spawnAngles[id]);
 		afkCheck[id] = 1;
 	}
+	if(gg_debug_active(gg_debug_spawn,3)) log_amx("[GG-SQL-DEBUG] spawn finalized slot=%i userid=%i level=%i weapon=%s spawn=%i",id,get_user_userid(id),level[id],lvlWeapon[id],gg_handicap_spawn_serial[id]);
 }
 
 // player changed his team
+/**
+ * Handle player teamchange processing.
+ */
 player_teamchange(id,oldTeam,newTeam)
 {
 	if(!ggActive) return 0;
@@ -4588,7 +5499,7 @@ player_teamchange(id,oldTeam,newTeam)
 	if(oldTeam == 0 && (newTeam == 1 || newTeam == 2) && !roundEnded && get_pcvar_num(gg_dm) && !task_exists(TASK_CHECK_JOINCLASS+id))
 	{
 		remove_task(TASK_CHECK_DEATHMATCH+id);
-		set_task(5.0,"check_deathmatch",TASK_CHECK_DEATHMATCH+id);
+		set_task_ex(5.0,"check_deathmatch",TASK_CHECK_DEATHMATCH+id);
 	}
 	
 	// keep track of time
@@ -4609,6 +5520,9 @@ player_teamchange(id,oldTeam,newTeam)
 }
 
 // restart the round
+/**
+ * Restart round.
+ */
 public restart_round(delay)
 {
 	// clear values
@@ -4624,8 +5538,8 @@ public restart_round(delay)
 	
 	if(delay < 1) delay = 1;
 
-	set_cvar_num("sv_restartround",delay);
-	set_task(float(delay)-0.1,"clear_all_values");
+	set_pcvar_num(gg_api_sv_restartround,delay);
+	set_task_ex(float(delay)-0.1,"clear_all_values");
 }
 
 // select a random weapon order
@@ -4633,6 +5547,14 @@ public restart_round(delay)
 // in cmd_gungame_teamplay we call map_start_cvars which leads to d_rOrder.
 // when called this way we don't want to let it change teamplay or run teamplay
 // configs, so we added the keepTeamplay parameter.
+
+// ============================================================================
+// RANDOM WEAPON ORDERS AND WINNER SOUNDS
+// ============================================================================
+
+/**
+ * Handle do rOrder processing.
+ */
 do_rOrder(keepTeamplay)
 {
 	// manage random teamplay
@@ -4672,7 +5594,7 @@ do_rOrder(keepTeamplay)
 			{
 				if(contain(rotation,",") != -1)
 				{
-					strtok(rotation,info,5,rotation,31,',');
+					strtok2(rotation,info,5,rotation,31,',');
 					if(i == iter) // this is the one we're looking for
 					{
 						initTeamplayInt = str_to_num(info);
@@ -4766,6 +5688,9 @@ do_rOrder(keepTeamplay)
 }
 
 // get the value of an order index in an order string
+/**
+ * Retrieve rOrder index val.
+ */
 get_rOrder_index_val(index,randomOrder[])
 {
 	// only one listed
@@ -4783,12 +5708,18 @@ get_rOrder_index_val(index,randomOrder[])
 }
 
 // gets the amount of orders in an order string
+/**
+ * Retrieve rOrder amount.
+ */
 get_rOrder_amount(randomOrder[])
 {
 	return str_count(randomOrder,',')+1;
 }
 
 // shuffle up our random order
+/**
+ * Shuffle rOrder.
+ */
 stock shuffle_rOrder(randomOrder[],len,maxRandom,avoid=-1)
 {
 	randomOrder[0] = 0;
@@ -4813,6 +5744,9 @@ stock shuffle_rOrder(randomOrder[],len,maxRandom,avoid=-1)
 }
 
 // play a random win sound
+/**
+ * Handle do rWinSound processing.
+ */
 do_rWinSound()
 {
 	// just one, no one cares
@@ -4851,6 +5785,9 @@ do_rWinSound()
 }
 
 // get the value of an order index in an order string
+/**
+ * Retrieve rWinSound index val.
+ */
 get_rWinSound_index_val(index,randomOrder[])
 {
 	// only one listed
@@ -4868,12 +5805,18 @@ get_rWinSound_index_val(index,randomOrder[])
 }
 
 // gets the amount of orders in an order string
+/**
+ * Retrieve rWinSound amount.
+ */
 get_rWinSound_amount(randomOrder[])
 {
 	return str_count(randomOrder,',')+1;
 }
 
 // shuffle up our random order
+/**
+ * Shuffle rWinSound.
+ */
 stock shuffle_rWinSound(randomOrder[],len,avoid=-1)
 {
 	randomOrder[0] = 0;
@@ -4898,12 +5841,23 @@ stock shuffle_rWinSound(randomOrder[],len,avoid=-1)
 }
 
 // shuffle an array
+/**
+ * Sort shuffle.
+ */
 public sort_shuffle(elem1,elem2)
 {
 	return random_num(-1,1);
 }
 
 // clear all saved values
+
+// ============================================================================
+// PLAYER STATE, WARMUP AND AMMUNITION
+// ============================================================================
+
+/**
+ * Clear values.
+ */
 clear_values(id,ignoreWelcome=0)
 {
 	level[id] = 0;
@@ -4935,6 +5889,9 @@ clear_values(id,ignoreWelcome=0)
 }
 
 // clears a TEAM's values
+/**
+ * Clear team values.
+ */
 clear_team_values(team)
 {
 	if(team != 1 && team != 2) return;
@@ -4945,6 +5902,9 @@ clear_team_values(team)
 }
 
 // possibly start a warmup round
+/**
+ * Start warmup.
+ */
 start_warmup()
 {
 	new warmup_value = get_pcvar_num(gg_warmup_timer_setting);
@@ -4953,9 +5913,10 @@ start_warmup()
 	// so this stops multiple warmups for multiple map iterations
 	if(warmup_value > 0 && warmup != -13)
 	{
+		gg_match_started_at = -1.0;
 		warmup = warmup_value;
 		get_pcvar_string(gg_warmup_weapon,warmupWeapon,23);
-		set_task(0.1,"warmup_check",TASK_WARMUP_CHECK);
+		set_task_ex(0.1,"warmup_check",TASK_WARMUP_CHECK);
 		
 		// now that warmup is in effect, reset player weapons
 		new player;
@@ -4983,6 +5944,9 @@ start_warmup()
 }
 
 // refresh a player's hegrenade stock
+/**
+ * Refresh nade.
+ */
 public refresh_nade(taskid)
 {
 	new id = taskid-TASK_REFRESH_NADE;
@@ -5003,6 +5967,9 @@ public refresh_nade(taskid)
 }
 
 // refill a player's ammo
+/**
+ * Refill ammo.
+ */
 stock refill_ammo(id,current=0)
 {
 	if(!is_user_alive(id)) return 0;
@@ -5141,6 +6108,9 @@ stock refill_ammo(id,current=0)
 }
 
 // show someone a welcome message
+/**
+ * Display welcome.
+ */
 public show_welcome(id)
 {
 	if(welcomed[id]) return;
@@ -5152,7 +6122,7 @@ public show_welcome(id)
 	if(menuid > 0)
 	{
 		// wait and try again
-		set_task(3.0,"show_welcome",id);
+		set_task_ex(3.0,"show_welcome",id);
 		return;
 	}
 
@@ -5199,6 +6169,9 @@ public show_welcome(id)
 }
 
 // show the required kills message
+/**
+ * Display required kills.
+ */
 stock show_required_kills(id,always_individual=0)
 {
 	// weapon-specific warmup, who cares
@@ -5218,6 +6191,9 @@ stock show_required_kills(id,always_individual=0)
 }
 
 // player killed himself
+/**
+ * Handle player suicided processing.
+ */
 player_suicided(id)
 {
 	static name[32];
@@ -5265,6 +6241,14 @@ player_suicided(id)
 }
 
 // player scored or lost a point
+
+// ============================================================================
+// SCORE AND LEVEL PROGRESSION
+// ============================================================================
+
+/**
+ * Change score.
+ */
 stock change_score(id,value,refill=1,play_sounds=1,effect_team=1,always_score=0)
 {
 	// don't bother scoring up on weapon-specific warmup
@@ -5364,6 +6348,9 @@ stock change_score(id,value,refill=1,play_sounds=1,effect_team=1,always_score=0)
 }
 
 // player gained or lost a level
+/**
+ * Change level.
+ */
 stock change_level(id,value,just_joined=0,show_message=1,always_score=0,play_sounds=1,effect_team=1)
 {
 	// can't score
@@ -5640,7 +6627,7 @@ stock change_level(id,value,just_joined=0,show_message=1,always_score=0,play_sou
 						if(is_user_connected(player))
 						{
 							// use word for english, digit otherwise
-							get_user_info(player,"lang",lang,2);
+							gg_get_effective_language(player,lang);
 							gungame_print(player,id,1,"%L",player,"TIED_LEADER_MULTI",name,leaderLevel,lvlWeapon[id],equali(lang,"en") ? numWord : digiWord);	
 						}
 					}
@@ -5692,7 +6679,7 @@ stock change_level(id,value,just_joined=0,show_message=1,always_score=0,play_sou
 			message_end();
 
 			gungame_print(0,id,1,"%L",LANG_PLAYER_C,"TRIPLE_LEVELED",name);
-			set_task(10.0,"end_star",TASK_END_STAR+id);
+			set_task_ex(10.0,"end_star",TASK_END_STAR+id);
 		}
 	}
 
@@ -5741,6 +6728,9 @@ stock change_level(id,value,just_joined=0,show_message=1,always_score=0,play_sou
 // forces a player to a level, skipping a lot of important stuff.
 // it's assumed that this is used as a result of "id" being leveled
 // up because his teammate leveled up in teamplay.
+/**
+ * Set level noifandsorbuts.
+ */
 stock set_level_noifandsorbuts(id,newLevel,play_sounds=1)
 {
 	// okay, this is our only but
@@ -5779,6 +6769,9 @@ stock set_level_noifandsorbuts(id,newLevel,play_sounds=1)
 }
 
 // get rid of a player's star
+/**
+ * Handle end star processing.
+ */
 public end_star(taskid)
 {
 	new id = taskid - TASK_END_STAR;
@@ -5803,8 +6796,12 @@ public end_star(taskid)
 }
 
 // give a player a weapon based on his level
+/**
+ * Give level weapon.
+ */
 stock give_level_weapon(id,notify=1,verify=1)
 {
+	if(!level[id]) { if(gg_debug_active(gg_debug_spawn,2)) log_amx("[GG-SQL-DEBUG] spawn weapon blocked slot=%i level=0",id); return 0; }
 	if(!is_user_alive(id) || level[id] <= 0) return 0;
 	
 	// not warming up, didn't just win
@@ -5861,7 +6858,7 @@ stock give_level_weapon(id,notify=1,verify=1)
 		}
 		else
 		{
-			replace(wpnName,23,"weapon_","");
+			replace_stringex(wpnName,23,"weapon_","");
 
 			// this is our designated weapon
 			if(equal(lvlWeapon[id],wpnName))
@@ -6016,7 +7013,7 @@ stock give_level_weapon(id,notify=1,verify=1)
 	if(verify)
 	{
 		remove_task(TASK_VERIFY_WEAPON+id);
-		set_task(1.0,"verify_weapon",TASK_VERIFY_WEAPON+id);
+		set_task_ex(1.0,"verify_weapon",TASK_VERIFY_WEAPON+id);
 	}
 	
 	// remember burst or silenced status
@@ -6047,6 +7044,9 @@ stock give_level_weapon(id,notify=1,verify=1)
 }
 
 // verify that we have our stupid weapon
+/**
+ * Verify weapon.
+ */
 public verify_weapon(taskid)
 {
 	new id = taskid-TASK_VERIFY_WEAPON;
@@ -6064,12 +7064,25 @@ public verify_weapon(taskid)
 }
 
 // crown a winner
+
+// ============================================================================
+// MATCH COMPLETION AND WINNER PRESENTATION
+// ============================================================================
+
+/**
+ * Handle win processing.
+ */
 win(winner,loser)
 {
 	// we have an invalid winner here
-	if(won || !is_user_connected(winner) || !can_score(winner))
+	if(won || gg_sql_save_pending || !is_user_connected(winner) || !can_score(winner))
 		return;
 
+	// Freeze duration before asynchronous statistics and MOTD processing.
+	gg_match_duration = -1;
+	if(gg_match_started_at >= 0.0)
+		gg_match_duration = floatround(get_gametime() - gg_match_started_at,floatround_floor);
+	gg_match_started_at = -1.0;
 	won = 1;
 	roundEnded = 1;
 
@@ -6078,13 +7091,13 @@ win(winner,loser)
 	play_sound(0,winSounds[currentWinSound]);
 
 	new map_iterations = get_pcvar_num(gg_map_iterations), restart,
-	player, Float:chattime = get_cvar_float("mp_chattime");
+	player, Float:chattime = get_pcvar_float(gg_api_mp_chattime);
 
 	// final playthrough, get ready for next map
 	if(mapIteration >= map_iterations && map_iterations > 0)
 	{
 		set_nextmap();
-		set_task(floatmax(chattime,2.5),"goto_nextmap");
+		// Map change is scheduled after the match statistics have completed.
 
 		// as of GG1.16, we always send a non-emessage intermission, because
 		// other map changing plugins (as well as StatsMe) intercepting it
@@ -6148,39 +7161,73 @@ win(winner,loser)
 		else gungame_print(0,winner,1,"%L!",LANG_PLAYER_C,"WON",winnerName);
 	}
 	
-	// our new super function
+	// Preserve the end-of-match context until the SQL continuation completes.
+	gg_sql_finish_loser = loser;
+	gg_sql_finish_restart = restart;
+	gg_sql_finish_chattime = chattime;
+	gg_sql_finish_winner_userid = get_user_userid(winner);
+	gg_sql_finish_loser_userid = (loser > 0 && is_user_connected(loser)) ? get_user_userid(loser) : 0;
+	if(gg_backend == 1)
+	{
+		for(new slot=1;slot<=maxPlayers;slot++)
+		{
+			gg_sql_finish_userids[slot] = 0;
+			gg_sql_finish_authids[slot][0] = 0;
+			if(!is_user_connected(slot)) continue;
+			gg_sql_finish_userids[slot] = get_user_userid(slot);
+			get_gg_authid(slot,gg_sql_finish_authids[slot],31);
+		}
+	}
 	stats_award_points(winner);
-	
+	if(!gg_sql_save_pending) gg_finish_match(winner,loser,restart,chattime);
+}
+
+/**
+ * Complete match.
+ */
+stock gg_finish_match(winner,loser,restart,Float:chattime)
+{
+	if(!restart) set_task_ex(floatmax(chattime,2.5),"goto_nextmap");
+
 	// finally show it off
 	new winner_motd[64];
 	get_pcvar_string(gg_winner_motd,winner_motd,63);
-	if(winner_motd[0] && winner_motd[0] != '0')
+	if(winner > 0 && is_user_connected(winner) && get_user_userid(winner) == gg_sql_finish_winner_userid && winner_motd[0] && winner_motd[0] != '0')
 	{
 		new params[66];
 		params[0] = winner;
-		params[1] = loser;
+		params[1] = (loser > 0 && is_user_connected(loser) && get_user_userid(loser) == gg_sql_finish_loser_userid) ? loser : 0;
 		copy(params[2],63,winner_motd);
-		set_task(1.0,"show_win_screen",_,params,65);
+		set_task_ex(1.0,"show_win_screen",_,params,65);
 	}
 	
 	// we can restart now (do it after calculations because points might get reset)
 	if(restart)
 	{
 		// delay it, because it will reset stuff
-		set_task(1.1,"restart_round",floatround(chattime-1.1));
+		set_task_ex(1.1,"restart_round",floatround(chattime-1.1));
 
-		set_task(floatmax(chattime-0.1,1.2),"restart_gungame",czero ? get_cvar_num("bot_stop") : 0);
-		set_task(floatmax(chattime+5.0,0.1),"stop_win_sound",currentWinSound);
+		set_task_ex(floatmax(chattime-0.1,1.2),"restart_gungame",czero ? get_cvar_num("bot_stop") : 0);
+		set_task_ex(floatmax(chattime+5.0,0.1),"stop_win_sound",currentWinSound);
 		
 		if(czero) server_cmd("bot_stop 1"); // freeze CZ bots
 	}
 }
 
 // restart gungame, for the next map iteration
+/**
+ * Restart gungame.
+ */
 public restart_gungame(old_bot_stop_value)
 {
+	gg_match_started_at = -1.0;
 	won = 0;
 	mapIteration++;
+	for(new h=1;h<=maxPlayers;h++)
+    {
+        if(gg_handicap_pending[h] && gg_debug_active(gg_debug_handicap,2)) log_amx("[GG-SQL-DEBUG] handicap discarded slot=%i reason=match_restart",h);
+        gg_handicap_pending[h] = 0;
+    }
 	
 	/*new i;
 	for(i=0;i<sizeof teamLevel;i++)
@@ -6217,7 +7264,106 @@ public restart_gungame(old_bot_stop_value)
 	warmupWeapon[0] = 0;
 }
 
+// Resolve local statistics paths once per map. Never truncate existing files.
+
+// ============================================================================
+// FILE STATISTICS INITIALIZATION
+// ============================================================================
+
+/**
+ * Initialize file.
+ */
+stock gg_file_init()
+{
+    new dataDir[192], directory[224], statsName[64], streakName[64];
+    get_datadir(dataDir, charsmax(dataDir));
+    formatex(directory, charsmax(directory), "%s/gungame", dataDir);
+    get_pcvar_string(gg_stats_file, statsName, charsmax(statsName));
+    get_pcvar_string(gg_stats_streak_file, streakName, charsmax(streakName));
+
+    if (!gg_valid_stats_filename(statsName) || !gg_valid_stats_filename(streakName)
+        || equali(statsName, streakName))
+    {
+        log_amx("ERROR: Invalid or duplicate local statistics filenames; statistics disabled");
+        return 0;
+    }
+    new tempName[65];
+    formatex(tempName, charsmax(tempName), "%s2", statsName);
+    if (equali(tempName, streakName)) return gg_file_name_collision();
+    formatex(tempName, charsmax(tempName), "%s2", streakName);
+    if (equali(tempName, statsName)) return gg_file_name_collision();
+
+    if (!dir_exists(directory))
+    {
+        mkdir(directory);
+        if (!dir_exists(directory))
+        {
+            log_amx("ERROR: Cannot create statistics directory: %s", directory);
+            return 0;
+        }
+        log_amx("Created statistics directory: %s", directory);
+    }
+    if (strlen(directory) + 1 + strlen(statsName) >= charsmax(sfFile)
+        || strlen(directory) + 1 + strlen(streakName) >= charsmax(gg_streak_path))
+    {
+        log_amx("ERROR: Local statistics path too long");
+        return 0;
+    }
+    formatex(sfFile, charsmax(sfFile), "%s/%s", directory, statsName);
+    formatex(gg_streak_path, charsmax(gg_streak_path), "%s/%s", directory, streakName);
+    if (!gg_prepare_stats_file(sfFile, statsName) || !gg_prepare_stats_file(gg_streak_path, streakName)) return 0;
+    log_amx("Local statistics backend initialized successfully");
+    return 1;
+}
+
+/**
+ * Handle file name collision processing.
+ */
+stock gg_file_name_collision()
+{
+    log_amx("ERROR: Local statistics filename conflicts with temporary filename");
+    return 0;
+}
+
+/**
+ * Handle valid stats filename processing.
+ */
+stock bool:gg_valid_stats_filename(const name[])
+{
+    return name[0] != 0 && !equal(name, ".") && !equal(name, "..")
+        && contain(name, "/") == -1 && contain(name, "\") == -1 && contain(name, ":") == -1;
+}
+
+/**
+ * Prepare stats file.
+ */
+stock gg_prepare_stats_file(const path[], const legacy[])
+{
+    new bool:exists = bool:file_exists(path);
+    if (file_exists(legacy))
+    {
+        log_amx("Legacy statistics file found: %s; not migrated automatically", legacy);
+        if (!exists)
+        {
+            log_amx("ERROR: Move legacy statistics file to %s before enabling local statistics", path);
+            return 0;
+        }
+    }
+    new file = fopen(path, "ab");
+    if (!file)
+    {
+        log_amx("ERROR: Cannot open statistics file for writing: %s", path);
+        return 0;
+    }
+    fclose(file);
+    if (!exists) log_amx("Created statistics file: %s", path);
+    return 1;
+}
+
 // stop the winner sound (for multiple map iterations)
+/**
+ * Stop win sound.
+ */
 public stop_win_sound(winSound)
 {
 	// stop winning sound
@@ -6226,10 +7372,154 @@ public stop_win_sound(winSound)
 }
 
 // calculate the winner screen... severely cut down from before
+// Only match-end participants may consume slot-indexed SQL results.
+
+// ============================================================================
+// ASYNCHRONOUS WINNER MOTD SNAPSHOTS
+// ============================================================================
+
+/**
+ * Complete SQL identity matches.
+ */
+stock gg_sql_finish_identity_matches(id)
+{
+	if(id < 1 || id > maxPlayers || !is_user_connected(id)) return 0;
+	if(!gg_sql_finish_userids[id] || get_user_userid(id) != gg_sql_finish_userids[id]) return 0;
+	new authid[32];
+	get_gg_authid(id,authid,31);
+	return equal(authid,gg_sql_finish_authids[id]);
+}
+
+// Capture the completed match before submitting any threaded MOTD writes.
+/**
+ * Build a match snapshot and submit the first asynchronous MOTD write stage.
+ */
+stock gg_win_sql_start(winner,loser,const url[],const nextmap[],stats_mode,stats_split,teamplay,timeratio,iterations,roundsleft,loserDC,winningTeam,losingTeam)
+{
+    if(gg_win_sql_pending || tuple == Empty_Handle || db == Empty_Handle)
+    {
+        if(gg_debug_active(gg_debug_motd,2)) log_amx("[GG-SQL-DEBUG] winmotd skipped pending=%i",gg_win_sql_pending);
+        return 0;
+    }
+    new systime = get_systime(), si = get_gg_si(), flags, team;
+    // Keep match timestamps distinct within this plugin instance.
+    if(systime <= gg_win_sql_timestamp) systime = gg_win_sql_timestamp + 1;
+    gg_win_sql_timestamp = systime;
+    new authid[32], name[32], escapedAuth[64], escapedName[64], escapedMap[64], escapedWeapon[48];
+    new winsColumn[8], pointsColumn[10], rankExpr[1024], row[1536];
+    if(si) { winsColumn = "wins_tp"; pointsColumn = "points_tp"; }
+    else { winsColumn = "wins"; pointsColumn = "points"; }
+    // Store the played map in the unused authid field of metadata row zero.
+    new playedMap[32], escapedPlayedMap[64];
+    get_mapname(playedMap,charsmax(playedMap));
+    if(gg_sql_quote(escapedPlayedMap,charsmax(escapedPlayedMap),playedMap) < 0 || gg_sql_quote(escapedMap,charsmax(escapedMap),nextmap) < 0)
+    {
+        log_amx("WinMOTD map escaping failed; write skipped");
+        return 0;
+    }
+    // Metadata weapon is unused; store duration seconds, or empty if start was not observed.
+    new duration[24];
+    if(gg_match_duration >= 0) num_to_str(gg_match_duration,duration,charsmax(duration));
+    new len = formatex(gg_win_sql_insert,charsmax(gg_win_sql_insert),"INSERT INTO `%s` VALUES ('0','%s','%s','%i','%i','%s','%i','%i','%i','%i','%i','%i','%i','%i','%i','%i','%s')",sqlPlayersTable,escapedPlayedMap,escapedMap,stats_mode,stats_split,duration,teamplay,timeratio,winner,loser,loserDC,winningTeam,losingTeam,iterations,roundsleft,systime,serverip);
+    for(new player=1;player<=maxPlayers;player++)
+    {
+        gg_win_sql_userids[player] = 0;
+        if(!gg_sql_finish_identity_matches(player)) continue;
+        get_gg_authid(player,authid,31);
+        get_user_name(player,name,31);
+        if(gg_sql_quote(escapedAuth,charsmax(escapedAuth),authid) < 0 || gg_sql_quote(escapedName,charsmax(escapedName),name) < 0 || gg_sql_quote(escapedWeapon,charsmax(escapedWeapon),lvlWeapon[player]) < 0)
+        {
+            log_amx("WinMOTD player escaping failed; write skipped");
+            return 0;
+        }
+        team = _:cs_get_user_team(player);
+        flags = 0;
+        if(team == winningTeam) { flags |= WON; if(player == winner) flags |= LASTKILL; }
+        else if(team > 0 && team < 3) { flags |= LOST; if(player == loser) flags |= LASTKILL; }
+        if(player == pointsExtraction[0][1]) flags |= NEWRECORD;
+        // Match competition ranking; zero represents an unranked player in the unsigned MOTD column.
+        if(stats_mode == 2)
+            formatex(rankExpr,charsmax(rankExpr),"COALESCE((SELECT IF(p.%s>0 OR p.%s>0,(SELECT COUNT(*)+1 FROM `%s` r WHERE r.serverip=p.serverip AND r.%s>p.%s AND (r.%s>0 OR r.%s>0)),0) FROM `%s` p WHERE p.authid='%s' AND p.serverip='%s' LIMIT 1),0)",pointsColumn,winsColumn,sqlTable,pointsColumn,pointsColumn,winsColumn,pointsColumn,sqlTable,escapedAuth,serverip);
+        else
+            formatex(rankExpr,charsmax(rankExpr),"COALESCE((SELECT IF(p.%s>0,(SELECT COUNT(*)+1 FROM `%s` r WHERE r.serverip=p.serverip AND r.%s>p.%s),0) FROM `%s` p WHERE p.authid='%s' AND p.serverip='%s' LIMIT 1),0)",winsColumn,sqlTable,winsColumn,winsColumn,sqlTable,escapedAuth,serverip);
+        formatex(row,charsmax(row),",('%i','%s','%s','%i','%i','%s','%i','%i','%i','%i','%i','%i',%s,'%i','%i','%i','%s')",player,escapedAuth,escapedName,team,level[player],escapedWeapon,flags,pointsExtraction[player][0],pointsExtraction[player][2],pointsExtraction[player][1],pointsExtraction[player][4],pointsExtraction[player][3],rankExpr,floatround(teamTimes[player][winningTeam-1]),floatround(teamTimes[player][losingTeam-1]),systime,serverip);
+        if(len + strlen(row) >= charsmax(gg_win_sql_insert))
+        {
+            log_amx("[GG-SQL-DEBUG] winmotd insert buffer exceeded");
+            return 0;
+        }
+        len += copy(gg_win_sql_insert[len],charsmax(gg_win_sql_insert)-len,row);
+        gg_win_sql_userids[player] = get_user_userid(player);
+        copy(gg_win_sql_authids[player],31,authid);
+    }
+    copy(gg_win_sql_url,63,url);
+    get_user_name(winner,gg_win_sql_name,31);
+    gg_win_sql_pending = 1;
+    new payload[2], statement[320];
+    payload[0] = ++gg_win_sql_generation;
+    if(get_pcvar_num(gg_winner_motd_history))
+    {
+        payload[1] = 1;
+        if(gg_debug_active(gg_debug_motd,3)) log_amx("[GG-SQL-DEBUG] winmotd request generation=%i stage=1 history=1 timestamp=%i server=%s",payload[0],systime,serverip);
+        SQL_ThreadQuery(tuple,"gg_win_sql_callback",gg_win_sql_insert,payload,sizeof payload);
+    }
+    else
+    {
+        payload[1] = 0;
+        formatex(statement,charsmax(statement),"DELETE FROM `%s` WHERE serverip='%s';",sqlPlayersTable,serverip);
+        if(gg_debug_active(gg_debug_motd,3)) log_amx("[GG-SQL-DEBUG] winmotd request generation=%i stage=0 history=0 timestamp=%i server=%s",payload[0],systime,serverip);
+        SQL_ThreadQuery(tuple,"gg_win_sql_callback",statement,payload,sizeof payload);
+    }
+    return 1;
+}
+
+/**
+ * Process the pending MOTD write stage and reject obsolete generation callbacks.
+ */
+public gg_win_sql_callback(failstate,Handle:query,error[],errnum,data[],size,Float:queuetime)
+{
+    if(size != 2 || !gg_win_sql_pending || data[0] != gg_win_sql_generation) return;
+    if(gg_debug_active(gg_debug_motd,3)) log_amx("[GG-SQL-DEBUG] winmotd callback generation=%i stage=%i state=%i queue=%.3f",data[0],data[1],failstate,queuetime);
+    if(failstate != 0)
+    {
+        gg_sql_handle_connection_error(failstate,errnum);
+        gg_win_sql_pending = 0;
+        log_amx("Threaded winner MOTD failed (state %i, error #%i): %s",failstate,errnum,error);
+        return;
+    }
+    if(data[1] == 0)
+    {
+        data[1] = 1;
+        if(gg_debug_active(gg_debug_motd,3)) log_amx("[GG-SQL-DEBUG] winmotd request generation=%i stage=1",data[0]);
+        SQL_ThreadQuery(tuple,"gg_win_sql_callback",gg_win_sql_insert,data,size);
+        return;
+    }
+    gg_win_sql_pending = 0;
+    if(gg_win_sql_url[0] == '2') return;
+    new authid[32], url[192], lang[3], header[32];
+    for(new player=1;player<=maxPlayers;player++)
+    {
+        if(!is_user_connected(player) || !gg_win_sql_userids[player] || get_user_userid(player) != gg_win_sql_userids[player]) continue;
+        get_gg_authid(player,authid,31);
+        if(!equal(authid,gg_win_sql_authids[player])) continue;
+        gg_get_effective_language(player,lang);
+        formatex(header,31,"%L",player,"WIN_MOTD_LINE1",gg_win_sql_name);
+        formatex(url,charsmax(url),"%s?s=%s&i=%i&l=%s&t=%i",gg_win_sql_url,serverip,player,lang,gg_win_sql_timestamp);
+        show_motd(player,url,header);
+    }
+    if(gg_debug_active(gg_debug_motd,2)) log_amx("[GG-SQL-DEBUG] winmotd web ready generation=%i",data[0]);
+}
+
 public show_win_screen(params[66]) // [winner,loser,gg_win_motd[64]]
 {
 	new winner = params[0], loser = params[1];
+	if(gg_debug_active(gg_debug_motd,3)) log_amx("[GG-SQL-DEBUG] winner screen requested slot=%i save_pending=%i",winner,gg_sql_save_pending);
 	if(!is_user_connected(winner)) return 0;
+	if(gg_backend == 1)
+	{
+		if(!gg_sql_finish_identity_matches(winner)) return 0;
+		if(!gg_sql_finish_identity_matches(loser)) loser = 0;
+	}
 	
 	new winner_motd[64];
 	copy(winner_motd,63,params[2]);
@@ -6245,97 +7535,24 @@ public show_win_screen(params[66]) // [winner,loser,gg_win_motd[64]]
 	new winnerTeam[10], winnerName[32], winnerColor[8], winnerWinSuffix[3], winnerStreakSuffix[3], streakChampColor[8], myStreakSuffix[3],
 	winningTeam = _:cs_get_user_team(winner), losingTeam = _:(!(winningTeam-1)) + 1;
 
-#if defined SQL
-	// abort if showing web page but could not initialize SQL
-	if(!isdigit(winner_motd[0]) && !sqlInit)
+	if (gg_backend == 1)
 	{
-		return 0;
+		// abort if showing web page but could not initialize SQL
+		if(!isdigit(winner_motd[0]) && !sqlInit)
+		{
+			return 0;
+		}
+
+		// if web page or set to 2, update database
+		if((!isdigit(winner_motd[0]) || winner_motd[0] == '2') && sqlInit)
+		{
+            gg_win_sql_start(winner,loser,winner_motd,nextmap,stats_mode,stats_split,teamplay,timeratio,iterations,roundsleft,loserDC,winningTeam,losingTeam);
+            // Mode 2 still displays the internal MOTD; only web display waits for SQL.
+            if(winner_motd[0] != '2') return 1;
+		}
 	}
 
-	// if web page or set to 2, update database
-	if((!isdigit(winner_motd[0]) || winner_motd[0] == '2') && sqlInit)
-	{
-		new systime = get_systime(), player, playerAuthid[32], playerName[32], playerSafeAuthid[64], playerSafeName[64], si = get_gg_si(), flags, team,
-		origLen = len = formatex(motd,1535,"DELETE FROM `%s`; INSERT INTO `%s` VALUES ('0','','%s','%i','%i','','%i','%i','%i','%i','%i','%i','%i','%i','%i','%i','%s'),",sqlPlayersTable,sqlPlayersTable,nextmap,stats_mode,stats_split,teamplay,timeratio,winner,loser,loserDC,winningTeam,losingTeam,iterations,roundsleft,systime,serverip);
-
-		for(player=1;player<=maxPlayers;player++)
-		{
-			if(!is_user_connected(player)) continue;
-			
-			if(len >= 1200) // getting too close for comfort, cash in what we have and start a new query
-			{
-				motd[len] = ';';
-				motd[len+1] = 0;
-				
-				// thread this to prevent weird connection errors??? only solution I could find
-				SQL_ThreadQuery(tuple,"sql_qhandler_dummy",motd);
-				
-				len = origLen = formatex(motd,1535,"INSERT INTO `%s` VALUES ",sqlPlayersTable);
-			}
-			
-			flags = 0;
-			team = _:cs_get_user_team(player);
-			
-			if(team == winningTeam)
-			{
-				flags |= WON;
-				if(player == winner) flags |= LASTKILL;
-			}
-			else if(team > 0 && team < 3)
-			{
-				flags |= LOST;
-				if(player == loser) flags |= LASTKILL;
-			}
-			
-			if(player == pointsExtraction[0][1]) flags |= NEWRECORD;
-			
-			get_gg_authid(player,playerAuthid,31);
-			get_user_name(player,playerName,31);
-			
-			// get new stats position
-			stats_clear_struct(playerStats[player]);
-			stats_get_position(player,playerAuthid,si);
-			
-			SQL_QuoteString(db,playerSafeName,63,playerName);
-			SQL_QuoteString(db,playerSafeAuthid,63,playerAuthid);
-
-			len += formatex(motd[len],1535-len,"%s('%i','%s','%s','%i','%i','%s','%i','%i','%i','%i','%i','%i','%i','%i','%i','%i','%s')",(len != origLen) ? "," : "",
-				player,playerSafeAuthid,playerSafeName,team,level[player],lvlWeapon[player],flags,pointsExtraction[player][0],pointsExtraction[player][2],pointsExtraction[player][1],pointsExtraction[player][4],pointsExtraction[player][3],statsPosition[player][si],floatround(teamTimes[player][winningTeam-1]),floatround(teamTimes[player][losingTeam-1]),systime,serverip);
-		}
-		
-		// if we actually added someone
-		if(len > origLen)
-		{		
-			motd[len] = ';';
-			motd[len+1] = 0;
-
-			query = SQL_PrepareQuery(db,motd);
-			SQL_ExecuteAndLog(query);
-			SQL_FreeHandle(query);
-		}
-		
-		// an actual web page
-		if(winner_motd[0] != '2')
-		{
-			new url[74], lang[3];
-			for(player=1;player<=maxPlayers;player++)
-			{
-				if(!is_user_connected(player)) continue;
-
-				get_user_info(player,"lang",lang,2);
-
-				formatex(header,31,"%L",player,"WIN_MOTD_LINE1",winnerName);
-				formatex(url,73,"%s?i=%i&l=%s",winner_motd,player,lang);
-
-				show_motd(player,url,header);
-			}
-			
-			return 1;
-		}
-	}
-#endif
-
-	if(sqlInit && stats_mode && is_user_connected(pointsExtraction[0][1]))
+	if(sqlInit && stats_mode && is_user_connected(pointsExtraction[0][1]) && (gg_backend != 1 || gg_sql_finish_identity_matches(pointsExtraction[0][1])))
 		get_team_color(CsTeams:get_user_team(pointsExtraction[0][1]),streakChampColor,7);
 
 	get_user_team(winner,winnerTeam,9);
@@ -6414,6 +7631,7 @@ public show_win_screen(params[66]) // [winner,loser,gg_win_motd[64]]
 	for(player=1;player<=maxPlayers;player++)
 	{
 		if(!is_user_connected(player)) continue;
+		if(gg_backend == 1 && !gg_sql_finish_identity_matches(player)) continue;
 
 		if(loserDC) formatex(loserName,31,"%L",player,"NO_ONE");
 		formatex(header,31,"%L",player,"WIN_MOTD_LINE1",winnerName);
@@ -6521,6 +7739,14 @@ public show_win_screen(params[66]) // [winner,loser,gg_win_motd[64]]
 //**********************************************************************
 
 // change the score of a team
+
+// ============================================================================
+// TEAMPLAY PROGRESSION AND LEADER HANDLING
+// ============================================================================
+
+/**
+ * Update teamplay score.
+ */
 stock teamplay_update_score(team,newScore,exclude=0,direct=0)
 {
 	if(team != 1 && team != 2) return;
@@ -6544,6 +7770,9 @@ stock teamplay_update_score(team,newScore,exclude=0,direct=0)
 }
 
 // change the level of a team
+/**
+ * Update teamplay level.
+ */
 stock teamplay_update_level(team,newLevel,exclude=0,direct=1)
 {
 	if(team != 1 && team != 2) return;
@@ -6564,6 +7793,9 @@ stock teamplay_update_level(team,newLevel,exclude=0,direct=1)
 }
 
 // play the taken/tied/lost lead sounds
+/**
+ * Play teamplay lead sounds.
+ */
 public teamplay_play_lead_sounds(id,oldLevel,Float:playDelay)
 {
 	// both teams not initialized yet
@@ -6602,7 +7834,7 @@ public teamplay_play_lead_sounds(id,oldLevel,Float:playDelay)
 				{
 					params[0] = player;
 					remove_task(TASK_PLAY_LEAD_SOUNDS+player);
-					set_task((thisTeam == team) ? playDelay : 0.1,"play_sound_by_cvar_task",TASK_PLAY_LEAD_SOUNDS+player,params,2);
+					set_task_ex((thisTeam == team) ? playDelay : 0.1,"play_sound_by_cvar_task",TASK_PLAY_LEAD_SOUNDS+player,params,2);
 				}
 			}
 		}
@@ -6626,7 +7858,7 @@ public teamplay_play_lead_sounds(id,oldLevel,Float:playDelay)
 					
 					params[0] = player;
 					remove_task(TASK_PLAY_LEAD_SOUNDS+player);
-					set_task((thisTeam == team) ? playDelay : 0.1,"play_sound_by_cvar_task",TASK_PLAY_LEAD_SOUNDS+player,params,2);
+					set_task_ex((thisTeam == team) ? playDelay : 0.1,"play_sound_by_cvar_task",TASK_PLAY_LEAD_SOUNDS+player,params,2);
 				}
 			}
 		}
@@ -6648,12 +7880,15 @@ public teamplay_play_lead_sounds(id,oldLevel,Float:playDelay)
 			
 			params[0] = player;
 			remove_task(TASK_PLAY_LEAD_SOUNDS+player);
-			set_task((thisTeam == team) ? playDelay : 0.1,"play_sound_by_cvar_task",TASK_PLAY_LEAD_SOUNDS+player,params,2);
+			set_task_ex((thisTeam == team) ? playDelay : 0.1,"play_sound_by_cvar_task",TASK_PLAY_LEAD_SOUNDS+player,params,2);
 		}
 	}
 }
 
 // find the highest level team and such
+/**
+ * Retrieve teamplay lead team.
+ */
 stock teamplay_get_lead_team(&retLevel=0,&retNumLeaders=0,&retRunnerUp=0)
 {
 	new leader, numLeaders, runnerUp;
@@ -6676,6 +7911,9 @@ stock teamplay_get_lead_team(&retLevel=0,&retNumLeaders=0,&retRunnerUp=0)
 }
 
 // gets the team's level goal without a player passed
+/**
+ * Retrieve teamplay team goal.
+ */
 teamplay_get_team_goal(team)
 {
 	if(team != 1 && team != 2) return 0;
@@ -6695,6 +7933,14 @@ teamplay_get_team_goal(team)
 //**********************************************************************
 
 // start the autovote
+
+// ============================================================================
+// AUTOMATIC VOTING AND TEAMPLAY SELECTION
+// ============================================================================
+
+/**
+ * Start autovote.
+ */
 public autovote_start()
 {
 	// vote in progress
@@ -6729,7 +7975,7 @@ public autovote_start()
 			{
 				if(contain(rotation,",") != -1)
 				{
-					strtok(rotation,info,5,rotation,31,',');
+					strtok2(rotation,info,5,rotation,31,',');
 					if(i == iter) // this is the one we're looking for
 					{
 						autovote_mode = str_to_num(info);
@@ -6781,12 +8027,15 @@ public autovote_start()
 	}
 
 	gungame_print(0,0,1,"%L",LANG_PLAYER_C,"VOTING_STARTED");
-	set_task(autovote_time,"autovote_result",TASK_AUTOVOTE_RESULT);
+	set_task_ex(autovote_time,"autovote_result",TASK_AUTOVOTE_RESULT);
 
 	return 1;
 }
 
 // take in votes
+/**
+ * Handle input for the autovote menu menu.
+ */
 public autovote_menu_handler(id,key)
 {
 	switch(key)
@@ -6823,6 +8072,9 @@ public autovote_menu_handler(id,key)
 }
 
 // calculate end of vote, some of this was thanks to VEN
+/**
+ * Handle autovote result processing.
+ */
 public autovote_result()
 {
 	new vYes = autovotes[0] + autovotes[1], vNo = autovotes[2], vTotal = vYes + vNo, vSuccess, teamplay = get_pcvar_num(gg_teamplay), key[16];
@@ -6848,12 +8100,12 @@ public autovote_result()
 			if(vSuccess && !ggActive)
 			{
 				restart_round(5);
-				set_task(4.8,"toggle_gungame",TASK_TOGGLE_GUNGAME+TOGGLE_ENABLE);
+				set_task_ex(4.8,"toggle_gungame",TASK_TOGGLE_GUNGAME+TOGGLE_ENABLE);
 			}
 			else if(!vSuccess && ggActive)
 			{
 				restart_round(5);
-				set_task(4.8,"toggle_gungame",TASK_TOGGLE_GUNGAME+TOGGLE_DISABLE);
+				set_task_ex(4.8,"toggle_gungame",TASK_TOGGLE_GUNGAME+TOGGLE_DISABLE);
 				
 				set_pcvar_num(gg_enabled,0);
 				ggActive = 0;
@@ -6870,7 +8122,7 @@ public autovote_result()
 			if(!ggActive)
 			{
 				restart_round(5);
-				set_task(4.8,"toggle_gungame",TASK_TOGGLE_GUNGAME+TOGGLE_ENABLE);
+				set_task_ex(4.8,"toggle_gungame",TASK_TOGGLE_GUNGAME+TOGGLE_ENABLE);
 			}
 
 			if(vTotal)
@@ -6893,7 +8145,7 @@ public autovote_result()
 					exec_gg_config_file(1,0); 
 				}
 
-				set_task(4.9,"force_teamplay",1);
+				set_task_ex(4.9,"force_teamplay",1);
 			}
 			else if(!vSuccess)
 			{
@@ -6905,7 +8157,7 @@ public autovote_result()
 					exec_gg_config_file(0,0);
 				}
 
-				set_task(4.9,"force_teamplay",0);
+				set_task_ex(4.9,"force_teamplay",0);
 			}
 
 			if(vSuccess) key = "AUTOVOTE_RES1";
@@ -6929,7 +8181,7 @@ public autovote_result()
 				if(!ggActive)
 				{
 					restart_round(5);
-					set_task(4.8,"toggle_gungame",TASK_TOGGLE_GUNGAME+TOGGLE_ENABLE);
+					set_task_ex(4.8,"toggle_gungame",TASK_TOGGLE_GUNGAME+TOGGLE_ENABLE);
 				}
 				
 				// pick a random value for teamplay if we need it, then see if we should be using it.
@@ -6949,7 +8201,7 @@ public autovote_result()
 					}
 					
 					key = "AUTOVOTE_RES1";
-					set_task(4.9,"force_teamplay",1);
+					set_task_ex(4.9,"force_teamplay",1);
 				}
 				else if(autovotes[0] < autovotes[1] || (use_rand && rand_val == 0)) // more votes for regular
 				{
@@ -6962,26 +8214,26 @@ public autovote_result()
 					}
 					
 					key = "AUTOVOTE_RES2";
-					set_task(4.9,"force_teamplay",0);
+					set_task_ex(4.9,"force_teamplay",0);
 				}
 				else // if equal, leave it be
 				{
 					if(teamplay)
 					{
 						key = "AUTOVOTE_RES1";
-						set_task(4.9,"force_teamplay",1);
+						set_task_ex(4.9,"force_teamplay",1);
 					}
 					else
 					{
 						key = "AUTOVOTE_RES2";
-						set_task(4.9,"force_teamplay",0);
+						set_task_ex(4.9,"force_teamplay",0);
 					}
 				}
 			}
 			else if(!vSuccess && ggActive)
 			{
 				restart_round(5);
-				set_task(4.8,"toggle_gungame",TASK_TOGGLE_GUNGAME+TOGGLE_DISABLE);
+				set_task_ex(4.8,"toggle_gungame",TASK_TOGGLE_GUNGAME+TOGGLE_DISABLE);
 				
 				set_pcvar_num(gg_enabled,0);
 				ggActive = 0;
@@ -6999,6 +8251,9 @@ public autovote_result()
 
 // force teamplay mode to what we want after a vote has been completed.
 // otherwise, when switching from GunGame off to on, it will be overwritten by gungame.cfg.
+/**
+ * Force teamplay.
+ */
 public force_teamplay(teamplay)
 {
 	set_pcvar_num(gg_teamplay,teamplay);
@@ -7012,30 +8267,40 @@ public force_teamplay(teamplay)
 //**********************************************************************
 
 // clear out everything about our stats
+
+// ============================================================================
+// STATISTICS RESET AND TIMESTAMP MAINTENANCE
+// ============================================================================
+
+/**
+ * Clear stats all.
+ */
 stats_clear_all()
 {
-#if !defined SQL
-	// destroy large array
-	if(statsArray) ArrayDestroy(statsArray);
+	if (gg_backend == 0)
+	{
+		// destroy large array
+		if(statsArray) ArrayDestroy(statsArray);
 
-	// destroy the two "pointer" arrays
-	if(statsPointers[0])
-	{
-		ArrayDestroy(statsPointers[0]);
-		statsSize[0] = 0;
+		// destroy the two "pointer" arrays
+		if(statsPointers[0])
+		{
+			ArrayDestroy(statsPointers[0]);
+			statsSize[0] = 0;
+		}
+		if(statsPointers[1])
+		{
+			ArrayDestroy(statsPointers[1]);
+			statsSize[1] = 0;
+		}
 	}
-	if(statsPointers[1])
-	{
-		ArrayDestroy(statsPointers[1]);
-		statsSize[1] = 0;
-	}
-#endif
 	
 	// clear out saved stats data for the players
 	for(new i=1;i<=maxPlayers;i++)
 	{
 		statsPosition[i][0] = 0;
 		statsPosition[i][1] = 0;
+		gg_sql_invalidate_player(i);
 		stats_clear_struct(playerStats[i]);
 	}
 	
@@ -7047,8 +8312,10 @@ stats_clear_all()
 	}
 }
 
-#if !defined SQL
 // converts a stats string (as in gungame.stats) into a stats struct (by reference)
+/**
+ * Handle stats str to struct processing.
+ */
 stats_str_to_struct(str[],struct[statsData])
 {
 	// The format for str (as saved in gungame.stats):
@@ -7061,50 +8328,76 @@ stats_str_to_struct(str[],struct[statsData])
 	
 	stats_clear_struct(struct);
 	
-	strtok(str,piece,31,whole,111,'^t');
+	strtok2(str,piece,31,whole,111,'^t');
 	copy(struct[sdAuthid],31,piece);
 	
-	strtok(whole,piece,5,whole,111,'^t');
+	strtok2(whole,piece,5,whole,111,'^t');
 	struct[sdWins][0] = str_to_num(piece);
 	
-	strtok(whole,piece,31,whole,111,'^t');
+	strtok2(whole,piece,31,whole,111,'^t');
 	copy(struct[sdName],31,piece);
 	
-	strtok(whole,piece,11,whole,111,'^t');
+	strtok2(whole,piece,11,whole,111,'^t');
 	struct[sdTimestamp] = str_to_num(piece);
 	
-	strtok(whole,piece,7,whole,111,'^t');
+	strtok2(whole,piece,7,whole,111,'^t');
 	struct[sdPoints][0] = str_to_num(piece);
 	
-	strtok(whole,piece,3,whole,111,'^t');
+	strtok2(whole,piece,3,whole,111,'^t');
 	struct[sdStreak][0] = str_to_num(piece);
 	
-	strtok(whole,piece,5,whole,111,'^t');
+	strtok2(whole,piece,5,whole,111,'^t');
 	struct[sdWins][1] = str_to_num(piece);
 	
-	strtok(whole,piece,7,whole,3,'^t');
+	strtok2(whole,piece,7,whole,3,'^t');
 	struct[sdPoints][1] = str_to_num(piece);
 	
 	//strtok(whole,piece,3,whole,1,'^t');
 	struct[sdStreak][1] = str_to_num(whole);
 }
-#endif
 
-#if defined SQL
-// sql version] much simpler.
+/**
+ * Refresh stats timestamp.
+ */
 stock stats_refresh_timestamp(authid[])
 {
-	if(!sqlInit) return 0;
-
-	SQL_QuoteString(db,safeName,63,authid);
-	query = SQL_PrepareQuery(db,"UPDATE `%s` SET timestamp='%i' WHERE authid='%s' AND serverip='%s' LIMIT 1;",sqlTable,get_systime(),safeName,serverip);
-
-	SQL_ExecuteAndLog(query);
-	SQL_FreeHandle(query);
-	
-	return 1;
+	if (!sqlInit) return 0;
+	if (gg_backend == 1) return stats_refresh_timestamp_sql(authid);
+	if (gg_backend == 0) return stats_refresh_timestamp_file(authid);
+	return 0;
 }
-#else
+
+// Queue timestamp updates without blocking the game thread.
+/**
+ * Refresh stats timestamp SQL.
+ */
+stock stats_refresh_timestamp_sql(authid[])
+{
+	if(!sqlInit || tuple == Empty_Handle || db == Empty_Handle) return 0;
+
+	new escapedAuthid[64], timestampQuery[512];
+	if(gg_sql_quote(escapedAuthid,charsmax(escapedAuthid),authid) < 0)
+	{
+		log_amx("Could not escape statistics identity for timestamp update");
+		return 0;
+	}
+
+	// A delayed update must not overwrite a newer match timestamp.
+	formatex(timestampQuery,charsmax(timestampQuery),"UPDATE `%s` SET timestamp=GREATEST(COALESCE(timestamp,0),%i) WHERE authid='%s' AND serverip='%s' LIMIT 1;",sqlTable,get_systime(),escapedAuthid,serverip);
+	SQL_ThreadQuery(tuple,"gg_sql_timestamp_callback",timestampQuery);
+	return 1; // Queued, not confirmed by the database.
+}
+
+/**
+ * Process the asynchronous sql timestamp response.
+ */
+public gg_sql_timestamp_callback(failstate,Handle:query,error[],errnum,data[],size,Float:queuetime)
+{
+	gg_sql_handle_connection_error(failstate,errnum);
+	if(failstate != 0)
+		log_amx("Threaded statistics timestamp update failed (state %i, error #%i): %s",failstate,errnum,error);
+}
+
 // IT'S BEEN REVIVED!
 //
 // This took me way too long to develop, but it actually is able to overwrite the
@@ -7113,9 +8406,12 @@ stock stats_refresh_timestamp(authid[])
 //
 // On my old 2.80 gHz Pentium IV, it takes less than a tenth of a second to read to
 // the bottom of a 10,000 line stats file and then refresh the final player's timestamp.
-stock stats_refresh_timestamp(authid[])
+/**
+ * Refresh stats timestamp file.
+ */
+stock stats_refresh_timestamp_file(authid[])
 {
-	get_pcvar_string(gg_stats_file,sfFile,63);
+	// Statistics path resolved during backend initialization.
 	if(!file_exists(sfFile)) return 0;
 
 	// Open in binary mode, because text mode can present issues regarding
@@ -7182,17 +8478,35 @@ stock stats_refresh_timestamp(authid[])
 
 	return (q != 255);
 }
-#endif
 
 // we now have a super-duper function so that we only have to go through
 // the stats file once, instead of rereading and rewriting it for every
 // single player in a points match.
 //
 // also, timestamps are refreshed here, instead of every time you join.
+
+// ============================================================================
+// STATISTICS AWARDS AND ASYNCHRONOUS SQL PERSISTENCE
+// ============================================================================
+
+/**
+ * Award stats points.
+ */
 public stats_award_points(winner)
+{
+	if (!sqlInit) return;
+	if (gg_backend == 1) stats_award_points_sql(winner);
+	else if (gg_backend == 0) stats_award_points_file(winner);
+}
+
+/**
+ * Award stats points SQL.
+ */
+stats_award_points_sql(winner)
 {	
 	new stats_mode = get_pcvar_num(gg_stats_mode);
 	if(!sqlInit || !stats_mode) return;
+	if(gg_sql_save_pending) { log_amx("Match save already pending; refusing overlapping save"); return; }
 
 	new teamplay = get_pcvar_num(gg_teamplay), winningTeam =_:cs_get_user_team(winner),
 	losingTeam = _:(!(winningTeam-1)) + 1, stats_ip = get_pcvar_num(gg_stats_ip),
@@ -7200,16 +8514,13 @@ public stats_award_points(winner)
 	
 	new si = get_gg_si();
 
-	new player, playerWins[32], playerPoints[32], playerStreak[32], playerAuthid[32][32], playerName[32][32],
-	playerTotalPoints[32], players[32], intStreak, playerNum, i, team, Float:time = get_gametime(), systime = get_systime();
+	new player, playerWins[32], playerPoints[32], playerAuthid[32][32], playerName[32][32],
+	players[32], playerNum, i, team, Float:time = get_gametime(), systime = get_systime();
 
-#if defined SQL
-	new playerSafeName[32][64], playerSafeAuthid[32][64];
-#endif
 
 	//new botid;
 
-	get_players(players,playerNum);
+	get_players_ex(players,playerNum);
 	for(i=0;i<playerNum;i++)
 	{
 		player = players[i];
@@ -7228,10 +8539,559 @@ public stats_award_points(winner)
 			formatex(playerAuthid[i],31,"BOT_%i",botid);
 		}*/
 		
-#if defined SQL
-		SQL_QuoteString(db,playerSafeName[i],63,playerName[i]);
-		SQL_QuoteString(db,playerSafeAuthid[i],63,playerAuthid[i]);
-#endif
+		
+		// solo wins only
+		if(player == winner && stats_mode == 1 && !teamplay)
+			playerWins[i] = 1;
+	}
+	
+	//
+	// COLLECT LIST OF PLAYERS AND THEIR INFORMATION
+	//
+
+	// points system
+	if(stats_mode == 2)
+	{
+		new wins, Float:flPoints, Float:winbonus = get_pcvar_float(gg_stats_winbonus), Float:percent;
+
+		for(i=0;i<playerNum;i++)
+		{
+			player = players[i];
+			if(!is_user_connected(player) || (ignore_bots && is_user_bot(player)))
+				continue;
+			
+			wins = 0; // WHY DID I FORGET THIS BEFORE
+			
+			// point ratio based on time played in teamplay
+			if(teamplay && timeratio)
+			{
+				// no play time
+				if(teamTimes[player][winningTeam-1] < 1.0 && teamTimes[player][losingTeam-1] < 1.0)
+					continue;
+
+				// give us points from losing team
+				flPoints = (float(teamLevel[losingTeam]) - 1.0) * teamTimes[player][losingTeam-1]/(teamTimes[player][winningTeam-1]+teamTimes[player][losingTeam-1]);
+
+				// give us points from winning team
+				percent = teamTimes[player][winningTeam-1]/(teamTimes[player][winningTeam-1]+teamTimes[player][losingTeam-1]);
+				flPoints += (float(teamLevel[winningTeam]) - 1.0) * percent;
+				
+				// we played over half on winning team, give us a bonus and win
+				if(percent >= 0.5)
+				{
+					flPoints *= winbonus;
+					wins = 1;
+				}
+			}
+			else
+			{
+				flPoints = float(level[player]) - 1.0; // calculate points and add
+
+				// winner gets bonus points plus a win
+				if(player == winner || (teamplay && _:cs_get_user_team(player) == winningTeam))
+				{
+					flPoints *= winbonus;
+					wins = 1;
+				}
+			}
+
+			// unnecessary
+			if(flPoints < 0.5 && !wins) continue;
+
+			playerWins[i] = wins;
+			playerPoints[i] = floatround(flPoints);
+			if(playerPoints[i] < 0) playerPoints[i] = 0;
+		}
+	}
+
+	// regular wins teamplay (solo regular wins is above)
+	else if(teamplay)
+	{
+		for(i=0;i<playerNum;i++)
+		{
+			player = players[i];
+			if(_:cs_get_user_team(player) == winningTeam && (!ignore_bots || !is_user_bot(player)))
+			{
+				// no play time
+				if(teamTimes[player][winningTeam-1] < 1.0 && teamTimes[player][losingTeam-1] < 1.0)
+					continue;
+
+				// have to play at least half to get a win
+				if(!timeratio || teamTimes[player][winningTeam-1]/(teamTimes[player][winningTeam-1]+teamTimes[player][losingTeam-1]) >= 0.5)
+					playerWins[i] = 1;
+			}
+		}
+	}
+	
+	// Capture the completed match before any statistics database operations.
+	gg_sql_save_count = playerNum;
+	gg_sql_save_time = systime;
+	gg_sql_save_mode = stats_mode;
+	gg_sql_save_index = si;
+	gg_sql_save_winner = winner;
+	gg_sql_save_teamplay = teamplay;
+	for(i=0;i<playerNum;i++)
+	{
+		player = players[i];
+		gg_sql_save_players[i][ggSaveSlot] = player;
+		gg_sql_save_players[i][ggSaveUserid] = get_user_userid(player);
+		copy(gg_sql_save_players[i][ggSaveAuthid],31,playerAuthid[i]);
+		copy(gg_sql_save_players[i][ggSaveName],31,playerName[i]);
+		get_user_team(player,gg_sql_save_players[i][ggSaveTeam],9);
+		gg_sql_save_players[i][ggSavePoints] = playerPoints[i];
+		gg_sql_save_players[i][ggSaveWins] = playerWins[i];
+	}
+
+	new statement[512], payload[1];
+	formatex(statement,charsmax(statement),"SELECT streak,name FROM `%s` WHERE type='%iR' AND serverip='%s' LIMIT 1;",sqlStreakTable,si,serverip);
+	gg_sql_save_pending = 1;
+	payload[0] = ++gg_sql_save_generation;
+	gg_debug_save_start = get_gametime();
+	gg_debug_save_reads = 0;
+	gg_debug_save_writes = 0;
+	if(gg_debug_active(gg_debug_stats,2)) log_amx("[GG-SQL-DEBUG] save start generation=%i players=%i",gg_sql_save_generation,gg_sql_save_count);
+	SQL_ThreadQuery(tuple,"gg_sql_save_record_callback",statement,payload,sizeof payload);
+}
+
+/**
+ * Process the asynchronous sql save record response.
+ */
+public gg_sql_save_record_callback(failstate,Handle:result,error[],errnum,data[],size,Float:queuetime)
+{
+	if(gg_debug_active(gg_debug_stats,3)) log_amx("[GG-SQL-DEBUG] gg_sql_save_record_callback state=%i queue=%.3f generation=%i",failstate,queuetime,gg_sql_save_generation);
+	if(size != 1 || !gg_sql_save_pending || data[0] != gg_sql_save_generation) return;
+	gg_debug_save_reads++;
+	new streakToBeat, champRowExists;
+	if(failstate != 0)
+	{
+		gg_sql_handle_connection_error(failstate,errnum);
+		log_amx("Match streak record load failed (state %i, error #%i): %s",failstate,errnum,error);
+		// No writes have been issued. Do not calculate a new record from missing data.
+		gg_sql_save_pending = 0;
+		if(!gg_sql_finish_restart) set_task_ex(floatmax(gg_sql_finish_chattime,2.5),"goto_nextmap");
+		else gg_finish_match(0,0,gg_sql_finish_restart,gg_sql_finish_chattime);
+		return;
+	}
+	if(SQL_NumResults(result))
+	{
+		champRowExists = 1;
+		streakToBeat = SQL_ReadResult(result,0);
+		SQL_ReadResult(result,1,spareName,31);
+	}
+	gg_sql_save_record = streakToBeat;
+	gg_sql_save_record_exists = champRowExists;
+	arrayset(gg_sql_save_streaks,0,sizeof gg_sql_save_streaks);
+	new statement[4096], authid[64], name[64], len, origLen;
+	// Validate all snapshot strings before the first destructive write.
+	for(new i=0;i<gg_sql_save_count;i++)
+	{
+		if(gg_sql_quote(authid,charsmax(authid),gg_sql_save_players[i][ggSaveAuthid]) < 0 || gg_sql_quote(name,charsmax(name),gg_sql_save_players[i][ggSaveName]) < 0)
+		{ gg_sql_save_abort(-1,0,"Match snapshot escaping failed"); return; }
+	}
+	origLen = len = formatex(statement,charsmax(statement),"DELETE FROM `%s` WHERE type='%iC' AND serverip='%s' AND authid NOT IN (",sqlStreakTable,gg_sql_save_index,serverip);
+	for(new i=0;i<gg_sql_save_count;i++)
+	{
+		if(!gg_sql_save_players[i][ggSaveWins]) continue;
+		if(gg_sql_quote(authid,charsmax(authid),gg_sql_save_players[i][ggSaveAuthid]) < 0)
+		{ gg_sql_save_abort(-1,0,"Streak identity escaping failed"); return; }
+		len += formatex(statement[len],charsmax(statement)-len,"%s'%s'",(len!=origLen) ? "," : "",authid);
+	}
+	if(len == origLen) len += formatex(statement[len],charsmax(statement)-len,"''");
+	formatex(statement[len],charsmax(statement)-len,");");
+	SQL_ThreadQuery(tuple,"gg_sql_save_delete_callback",statement,data,size);
+}
+
+/**
+ * Abort SQL save.
+ */
+stock gg_sql_save_abort(failstate,errnum,const error[])
+{
+	gg_sql_handle_connection_error(failstate,errnum);
+	log_amx("[GG-SQL-DEBUG] save abort generation=%i reads=%i writes=%i elapsed=%.3f",gg_sql_save_generation,gg_debug_save_reads,gg_debug_save_writes,get_gametime()-gg_debug_save_start);
+	log_amx("Match SQL processing failed (state %i, error #%i): %s; save aborted, partial writes possible",failstate,errnum,error);
+	// Partial writes may have changed totals or rankings.
+	stats_clear_all();
+	gg_sql_save_pending = 0;
+	if(!gg_sql_finish_restart) set_task_ex(floatmax(gg_sql_finish_chattime,2.5),"goto_nextmap");
+	else gg_finish_match(0,0,gg_sql_finish_restart,gg_sql_finish_chattime);
+}
+
+/**
+ * Process the asynchronous sql save delete response.
+ */
+public gg_sql_save_delete_callback(failstate,Handle:result,error[],errnum,data[],size,Float:queuetime)
+{
+	if(gg_debug_active(gg_debug_stats,3)) log_amx("[GG-SQL-DEBUG] gg_sql_save_delete_callback state=%i queue=%.3f generation=%i",failstate,queuetime,gg_sql_save_generation);
+	if(size != 1 || !gg_sql_save_pending || data[0] != gg_sql_save_generation) return;
+	gg_debug_save_writes++;
+	if(failstate != 0) { gg_sql_save_abort(failstate,errnum,error); return; }
+	new statement[512];
+	formatex(statement,charsmax(statement),"SELECT authid,streak FROM `%s` WHERE type='%iC' AND serverip='%s';",sqlStreakTable,gg_sql_save_index,serverip);
+	SQL_ThreadQuery(tuple,"gg_sql_save_current_callback",statement,data,size);
+}
+
+/**
+ * Process the asynchronous sql save current response.
+ */
+public gg_sql_save_current_callback(failstate,Handle:result,error[],errnum,data[],size,Float:queuetime)
+{
+	if(gg_debug_active(gg_debug_stats,3)) log_amx("[GG-SQL-DEBUG] gg_sql_save_current_callback state=%i queue=%.3f generation=%i",failstate,queuetime,gg_sql_save_generation);
+	if(size != 1 || !gg_sql_save_pending || data[0] != gg_sql_save_generation) return;
+	gg_debug_save_reads++;
+	if(failstate != 0) { gg_sql_save_abort(failstate,errnum,error); return; }
+	new authid[64];
+	while(SQL_MoreResults(result))
+	{
+		SQL_ReadResult(result,0,authid,charsmax(authid));
+		for(new i=0;i<gg_sql_save_count;i++)
+		{
+			if(!equal(authid,gg_sql_save_players[i][ggSaveAuthid])) continue;
+			gg_sql_save_streaks[i] = SQL_ReadResult(result,1);
+			break;
+		}
+		SQL_NextRow(result);
+	}
+	gg_sql_streak_count = 0;
+	gg_sql_streak_cursor = 0;
+	gg_sql_save_continue(gg_sql_save_record,gg_sql_save_record_exists);
+}
+
+/**
+ * Continue SQL save.
+ */
+stock gg_sql_save_continue(streakToBeat,champRowExists)
+{
+	new playerNum = gg_sql_save_count, systime = gg_sql_save_time, si = gg_sql_save_index, winner = gg_sql_save_winner;
+	new players[32], playerWins[32], playerStreak[32],
+		playerAuthid[32][32], playerName[32][32], playerSafeAuthid[32][64], playerSafeName[32][64], i, streakChamp = -1;
+	for(i=0;i<playerNum;i++)
+	{
+		players[i] = gg_sql_save_players[i][ggSaveSlot];
+		playerWins[i] = gg_sql_save_players[i][ggSaveWins];
+		copy(playerAuthid[i],31,gg_sql_save_players[i][ggSaveAuthid]);
+		copy(playerName[i],31,gg_sql_save_players[i][ggSaveName]);
+		if(gg_sql_quote(playerSafeAuthid[i],63,playerAuthid[i]) < 0 || gg_sql_quote(playerSafeName[i],63,playerName[i]) < 0)
+		{ gg_sql_save_abort(-1,0,"Streak player escaping failed"); return; }
+	}
+	// Build ordered streak writes before dispatching any of them.
+	pointsExtraction[0][0] = streakToBeat; // record old record
+	pointsExtraction[0][1] = -1; // record champion
+	
+	new len, origLen;
+	static saveQuery[4096];
+
+	// Current streaks were loaded by the preceding threaded query.
+	for(i=0;i<playerNum;i++) playerStreak[i] = gg_sql_save_streaks[i];
+
+	len = origLen = formatex(saveQuery,4095,"INSERT INTO `%s` VALUES ",sqlStreakTable);
+	
+	// now go through players, and make sure to start a streak for those who don't have one
+	for(i=0;i<playerNum;i++)
+	{
+		if(playerWins[i])
+		{
+			playerStreak[i]++; // if they won, they get one added to their streak
+
+			 // am I the champion?? also, in the case of a tie, allow the winner of this round to be considered the champ
+			if(playerStreak[i] > streakToBeat || (streakChamp != -1 && playerStreak[i] == streakToBeat && players[i] == winner))
+			{
+				streakToBeat = playerStreak[i];
+				streakChamp = i;
+			}
+			
+			// didn't find one with previous loop
+			if(playerStreak[i] == 1) // because of increment above, will be 1 at minimum
+			{			
+				// insert a new row. note that the streak is inserted as 0 because it gets incremented below.
+				len += formatex(saveQuery[len],4095-len,"('%iC','%s','0','%s','%i','%s'),",si,playerSafeAuthid[i],playerSafeName[i],systime,serverip);
+				
+				// cash in if we get too close
+				if(len >= 1200)
+				{
+					saveQuery[len-1] = ';';
+					saveQuery[len] = 0;
+
+					if(!gg_sql_streak_enqueue(saveQuery)) return;
+					
+					len = origLen = formatex(saveQuery,4095,"INSERT INTO `%s` VALUES ",sqlStreakTable);
+				}
+			}
+		}
+	}
+	
+	// if we have some leftover query
+	if(len > origLen)
+	{
+		saveQuery[len-1] = ';';
+		saveQuery[len] = 0;
+
+		if(!gg_sql_streak_enqueue(saveQuery)) return;
+	}
+
+	// update everyone's current streaks by +1
+	formatex(saveQuery,charsmax(saveQuery),"UPDATE `%s` SET streak=streak+1 WHERE type='%iC' AND serverip='%s';",sqlStreakTable,si,serverip);
+	if(!gg_sql_streak_enqueue(saveQuery)) return;
+	
+	// somebody beat the champion!
+	if(streakToBeat && streakChamp != -1)
+	{
+		if(champRowExists) formatex(saveQuery,charsmax(saveQuery),"UPDATE `%s` SET authid='%s', streak='%i', name='%s', timestamp='%i' WHERE type='%iR' AND serverip='%s' LIMIT 1;",sqlStreakTable,playerSafeAuthid[streakChamp],streakToBeat,playerSafeName[streakChamp],systime,si,serverip);
+		else formatex(saveQuery,charsmax(saveQuery),"INSERT INTO `%s` VALUES ('%iR','%s','%i','%s',%i,'%s');",sqlStreakTable,si,playerSafeAuthid[streakChamp],streakToBeat,playerSafeName[streakChamp],systime,serverip);
+
+		if(!gg_sql_streak_enqueue(saveQuery)) return;
+	}
+		
+	// we have a new champion, record their stuff
+	if(streakChamp != -1)
+	{
+		pointsExtraction[0][1] = players[streakChamp]; // record champion
+		pointsExtraction[0][2] = playerStreak[streakChamp]; // record new record
+		copy(spareName,31,playerName[streakChamp]);
+	}
+	
+	for(i=0;i<playerNum;i++) gg_sql_save_streaks[i] = playerStreak[i];
+	gg_sql_streak_next();
+}
+
+/**
+ * Queue SQL streak.
+ */
+stock gg_sql_streak_enqueue(const statement[])
+{
+    if(gg_sql_streak_count >= sizeof gg_sql_streak_queries || strlen(statement) >= sizeof gg_sql_streak_queries[])
+    {
+        gg_sql_save_abort(-1,0,"Streak statement buffer exhausted");
+        return 0;
+    }
+    copy(gg_sql_streak_queries[gg_sql_streak_count++],sizeof gg_sql_streak_queries[]-1,statement);
+    return 1;
+}
+
+/**
+ * Advance SQL streak.
+ */
+stock gg_sql_streak_next()
+{
+    if(gg_sql_streak_cursor == gg_sql_streak_count)
+    {
+        gg_sql_save_statistics();
+        return;
+    }
+    new payload[1];
+    payload[0] = gg_sql_save_generation;
+    SQL_ThreadQuery(tuple,"gg_sql_streak_write_callback",gg_sql_streak_queries[gg_sql_streak_cursor],payload,sizeof payload);
+}
+
+/**
+ * Process the asynchronous sql streak write response.
+ */
+public gg_sql_streak_write_callback(failstate,Handle:result,error[],errnum,data[],size,Float:queuetime)
+{
+    if(gg_debug_active(gg_debug_stats,3)) log_amx("[GG-SQL-DEBUG] gg_sql_streak_write_callback state=%i queue=%.3f generation=%i",failstate,queuetime,gg_sql_save_generation);
+    if(size != 1 || !gg_sql_save_pending || data[0] != gg_sql_save_generation) return;
+    gg_debug_save_writes++;
+    if(failstate != 0) { gg_sql_save_abort(failstate,errnum,error); return; }
+    gg_sql_streak_cursor++;
+    gg_sql_streak_next();
+}
+
+/**
+ * Handle sql save statistics processing.
+ */
+stock gg_sql_save_statistics()
+{
+    new statement[4096], authid[64], len, payload[1];
+    len = formatex(statement,charsmax(statement),"SELECT authid,wins,points,streak,wins_tp,points_tp,streak_tp FROM `%s` WHERE serverip='%s' AND authid IN(",sqlTable,serverip);
+    for(new i=0;i<gg_sql_save_count;i++)
+    {
+        if(gg_sql_quote(authid,charsmax(authid),gg_sql_save_players[i][ggSaveAuthid]) < 0)
+        { gg_sql_save_abort(-1,0,"Statistics identity escaping failed"); return; }
+        len += formatex(statement[len],charsmax(statement)-len,"%s'%s'",i ? "," : "",authid);
+    }
+    if(!gg_sql_save_count) len += formatex(statement[len],charsmax(statement)-len,"''");
+    formatex(statement[len],charsmax(statement)-len,");");
+    payload[0] = gg_sql_save_generation;
+    SQL_ThreadQuery(tuple,"gg_sql_stats_read_callback",statement,payload,sizeof payload);
+}
+
+/**
+ * Process the asynchronous sql stats read response.
+ */
+public gg_sql_stats_read_callback(failstate,Handle:result,error[],errnum,data[],size,Float:queuetime)
+{
+    if(gg_debug_active(gg_debug_stats,3)) log_amx("[GG-SQL-DEBUG] gg_sql_stats_read_callback state=%i queue=%.3f generation=%i",failstate,queuetime,gg_sql_save_generation);
+    if(size != 1 || !gg_sql_save_pending || data[0] != gg_sql_save_generation) return;
+    gg_debug_save_reads++;
+    if(failstate != 0) { gg_sql_save_abort(failstate,errnum,error); return; }
+    arrayset(gg_sql_stats_found,0,sizeof gg_sql_stats_found);
+    new authid[64], si = gg_sql_save_index, slot, i;
+    for(i=0;i<gg_sql_save_count;i++)
+    {
+        slot = gg_sql_save_players[i][ggSaveSlot];
+        pointsExtraction[slot][0] = gg_sql_save_players[i][ggSaveWins];
+        pointsExtraction[slot][1] = gg_sql_save_players[i][ggSavePoints];
+        pointsExtraction[slot][2] = gg_sql_save_players[i][ggSavePoints];
+        pointsExtraction[slot][3] = gg_sql_save_streaks[i];
+        pointsExtraction[slot][4] = 0;
+    }
+    while(SQL_MoreResults(result))
+    {
+        SQL_ReadResult(result,0,authid,charsmax(authid));
+        for(i=0;i<gg_sql_save_count;i++)
+        {
+            if(gg_sql_stats_found[i] || !equal(authid,gg_sql_save_players[i][ggSaveAuthid])) continue;
+            gg_sql_stats_found[i] = 1;
+            slot = gg_sql_save_players[i][ggSaveSlot];
+            pointsExtraction[slot][0] += SQL_ReadResult(result,1+si*3);
+            pointsExtraction[slot][2] += SQL_ReadResult(result,2+si*3);
+            pointsExtraction[slot][4] = SQL_ReadResult(result,3+si*3);
+            break;
+        }
+        SQL_NextRow(result);
+    }
+    gg_sql_stats_cursor = 0;
+    gg_sql_stats_next();
+}
+
+/**
+ * Advance SQL stats.
+ */
+stock gg_sql_stats_next()
+{
+    if(gg_sql_stats_cursor >= gg_sql_save_count)
+    {
+        gg_sql_stats_complete();
+        return;
+    }
+    new i = gg_sql_stats_cursor, slot = gg_sql_save_players[i][ggSaveSlot], si = gg_sql_save_index;
+    new wins = gg_sql_save_players[i][ggSaveWins], points = gg_sql_save_players[i][ggSavePoints];
+    new record = max(pointsExtraction[slot][4],gg_sql_save_streaks[i]);
+    new authid[64], name[64], statement[1024], payload[2];
+    if(gg_sql_quote(authid,charsmax(authid),gg_sql_save_players[i][ggSaveAuthid]) < 0 || gg_sql_quote(name,charsmax(name),gg_sql_save_players[i][ggSaveName]) < 0)
+    { gg_sql_save_abort(-1,0,"Statistics escaping failed"); return; }
+    if(!wins && !points)
+    {
+        // Refresh the snapshot name even when the player earned no points or wins.
+        formatex(statement,charsmax(statement),"UPDATE `%s` SET name=IF(COALESCE(timestamp,0)<=%i,'%s',name),timestamp=GREATEST(COALESCE(timestamp,0),%i) WHERE authid='%s' AND serverip='%s' LIMIT 1;",sqlTable,gg_sql_save_time,name,gg_sql_save_time,authid,serverip);
+        if(gg_debug_active(gg_debug_stats,3)) log_amx("[GG-SQL-DEBUG] statistics name refresh slot=%i generation=%i",slot,gg_sql_save_generation);
+    }
+    else if(gg_sql_stats_found[i])
+    {
+        if(!si) formatex(statement,charsmax(statement),"UPDATE `%s` SET wins=wins+%i,name='%s',timestamp=GREATEST(COALESCE(timestamp,0),%i),points=points+%i,streak=%i WHERE authid='%s' AND serverip='%s' LIMIT 1;",sqlTable,wins,name,gg_sql_save_time,points,record,authid,serverip);
+        else formatex(statement,charsmax(statement),"UPDATE `%s` SET wins_tp=wins_tp+%i,name='%s',timestamp=GREATEST(COALESCE(timestamp,0),%i),points_tp=points_tp+%i,streak_tp=%i WHERE authid='%s' AND serverip='%s' LIMIT 1;",sqlTable,wins,name,gg_sql_save_time,points,record,authid,serverip);
+    }
+    else
+    {
+        if(!si) formatex(statement,charsmax(statement),"INSERT INTO `%s` (authid,name,timestamp,wins,points,streak,serverip) VALUES ('%s','%s',%i,%i,%i,%i,'%s');",sqlTable,authid,name,gg_sql_save_time,wins,points,record,serverip);
+        else formatex(statement,charsmax(statement),"INSERT INTO `%s` (authid,name,timestamp,wins_tp,points_tp,streak_tp,serverip) VALUES ('%s','%s',%i,%i,%i,%i,'%s');",sqlTable,authid,name,gg_sql_save_time,wins,points,record,serverip);
+    }
+    payload[0] = gg_sql_save_generation;
+    payload[1] = i;
+    SQL_ThreadQuery(tuple,"gg_sql_stats_write_callback",statement,payload,sizeof payload);
+}
+
+/**
+ * Process the asynchronous sql stats write response.
+ */
+public gg_sql_stats_write_callback(failstate,Handle:result,error[],errnum,data[],size,Float:queuetime)
+{
+    if(gg_debug_active(gg_debug_stats,3)) log_amx("[GG-SQL-DEBUG] gg_sql_stats_write_callback state=%i queue=%.3f generation=%i",failstate,queuetime,gg_sql_save_generation);
+    if(size != 2 || !gg_sql_save_pending || data[0] != gg_sql_save_generation || data[1] != gg_sql_stats_cursor) return;
+    gg_debug_save_writes++;
+    if(failstate != 0) { gg_sql_save_abort(failstate,errnum,error); return; }
+    gg_sql_stats_cursor++;
+    gg_sql_stats_next();
+}
+
+/**
+ * Complete SQL stats.
+ */
+stock gg_sql_stats_complete()
+{
+    if(gg_debug_active(gg_debug_stats,2)) log_amx("[GG-SQL-DEBUG] save complete generation=%i reads=%i writes=%i elapsed=%.3f",gg_sql_save_generation,gg_debug_save_reads,gg_debug_save_writes,get_gametime()-gg_debug_save_start);
+    new playerNum = gg_sql_save_count, stats_mode = gg_sql_save_mode, teamplay = gg_sql_save_teamplay;
+    new players[32], playerWins[32], playerPoints[32], i;
+    for(i=0;i<playerNum;i++)
+    {
+        players[i] = gg_sql_save_players[i][ggSaveSlot];
+        playerWins[i] = gg_sql_save_players[i][ggSaveWins];
+        playerPoints[i] = gg_sql_save_players[i][ggSavePoints];
+    }
+    new teamName[10], key_GAINED_POINTS[18];
+
+    // decide what to use based on split and such
+    if(get_pcvar_num(gg_stats_split))
+    {
+        if(teamplay) key_GAINED_POINTS = "GAINED_POINTS_TP";
+        else key_GAINED_POINTS = "GAINED_POINTS_REG";
+    }
+    else key_GAINED_POINTS = "GAINED_POINTS";
+        
+    for(i=0;i<playerNum;i++)
+    {
+        // Preserve the match-end identity even if the slot has since changed.
+        copy(teamName,charsmax(teamName),gg_sql_save_players[i][ggSaveTeam]);
+
+        if(playerWins[i]) log_message("^"%s<%i><%s><%s>^" triggered ^"Won_GunGame^"",gg_sql_save_players[i][ggSaveName],gg_sql_save_players[i][ggSaveUserid],gg_sql_save_players[i][ggSaveAuthid],teamName);
+
+        if(stats_mode == 2 && playerPoints[i])
+        {
+            log_message("^"%s<%i><%s><%s>^" triggered ^"GunGame_Points^" amount ^"%i^"",gg_sql_save_players[i][ggSaveName],gg_sql_save_players[i][ggSaveUserid],gg_sql_save_players[i][ggSaveAuthid],teamName,playerPoints[i]);
+            if(is_user_connected(players[i]) && get_user_userid(players[i]) == gg_sql_save_players[i][ggSaveUserid])
+                gungame_print(players[i],0,1,"%L",players[i],key_GAINED_POINTS,playerPoints[i],pointsExtraction[players[i]][2],pointsExtraction[players[i]][0]);
+        }
+    }
+    // Invalidate cached totals and rankings only after all writes are acknowledged.
+    // Outstanding prefetch callbacks are rejected by their load generation.
+    stats_clear_all();
+    gg_sql_save_pending = 0;
+    gg_finish_match(gg_sql_save_winner,gg_sql_finish_loser,gg_sql_finish_restart,gg_sql_finish_chattime);
+}
+
+
+// ============================================================================
+// FILE BACKEND STATISTICS AWARDS
+// ============================================================================
+
+/**
+ * Award stats points file.
+ */
+stats_award_points_file(winner)
+{	
+	new stats_mode = get_pcvar_num(gg_stats_mode);
+	if(!sqlInit || !stats_mode) return;
+
+	new teamplay = get_pcvar_num(gg_teamplay), winningTeam =_:cs_get_user_team(winner),
+	losingTeam = _:(!(winningTeam-1)) + 1, stats_ip = get_pcvar_num(gg_stats_ip),
+	timeratio = get_pcvar_num(gg_teamplay_timeratio), ignore_bots = get_pcvar_num(gg_ignore_bots);
+	
+	new si = get_gg_si();
+
+	new player, playerWins[32], playerPoints[32], playerStreak[32], playerAuthid[32][32], playerName[32][32],
+	playerTotalPoints[32], players[32], intStreak, playerNum, i, team, Float:time = get_gametime(), systime = get_systime();
+
+
+	//new botid;
+
+	get_players_ex(players,playerNum);
+	for(i=0;i<playerNum;i++)
+	{
+		player = players[i];
+		
+		// keep track of time
+		team = _:cs_get_user_team(player);
+		if(team == 1 || team == 2) teamTimes[player][team-1] += time - lastSwitch[player];
+		lastSwitch[player] = time;
+		
+		get_gg_authid(player,playerAuthid[i],31,stats_ip);
+		get_user_name(player,playerName[i],31);
+		
+		/*if(equal(playerAuthid[i],"BOT"))
+		{
+			botid++;
+			formatex(playerAuthid[i],31,"BOT_%i",botid);
+		}*/
+		
 		
 		// solo wins only
 		if(player == winner && stats_mode == 1 && !teamplay)
@@ -7322,140 +9182,13 @@ public stats_award_points(winner)
 	
 	new streakToBeat = 0, streakChamp = -1;
 	
-#if defined SQL
-	new champRowExists;
-
-	// find current champion's info
-	query = SQL_PrepareQuery(db,"SELECT streak,name FROM `%s` WHERE type='%iR' AND serverip='%s' LIMIT 1;",sqlStreakTable,si,serverip);
-	if(SQL_ExecuteAndLog(query))
-	{
-		if(SQL_NumResults(query))
-		{
-			champRowExists = 1;
-			streakToBeat = SQL_ReadResult(query,0);
-			SQL_ReadResult(query,1,spareName,31);
-		}
-	}
-	SQL_FreeHandle(query);
-	
-	pointsExtraction[0][0] = streakToBeat; // record old record
-	pointsExtraction[0][1] = -1; // record champion
-	
-	new len, origLen;
-
-	// form query to delete players who did not win this round from the cache
-	origLen = len = formatex(mkQuery,1535,"DELETE FROM `%s` WHERE type='%iC' AND serverip='%s' AND authid NOT IN (",sqlStreakTable,si,serverip);
-	for(i=0;i<playerNum;i++)
-	{
-		if(playerWins[i]) len += formatex(mkQuery[len],1535-len,"%s'%s'",(len!=origLen) ? "," : "",playerSafeAuthid[i]);
-	}
-
-	if(len == origLen)
-	{
-		// no one was added, then add empty apostrophes to avoid SQL syntax error
-		len += formatex(mkQuery[len],1535-len,"''");
-	}
-
-	len += formatex(mkQuery[len],1535-len,");");
-
-	query = SQL_PrepareQuery(db,mkQuery);
-	SQL_ExecuteAndLog(query);
-	SQL_FreeHandle(query);
-	
-	// use one query to get all current streaks, then process them in the loop and save to playerStreak array
-	new authid[64];
-	query = SQL_PrepareQuery(db,"SELECT authid,streak FROM `%s` WHERE type='%iC' AND serverip='%s';",sqlStreakTable,si,serverip);
-	if(SQL_ExecuteAndLog(query) && SQL_NumResults(query))
-	{	
-		while(SQL_MoreResults(query))
-		{
-			SQL_ReadResult(query,0,authid,63);
-			
-			for(i=0;i<playerNum;i++)
-			{
-				if(equal(authid,playerSafeAuthid[i]))
-				{
-					playerStreak[i] = SQL_ReadResult(query,1);
-					break;
-				}
-			}
-			
-			SQL_NextRow(query);
-		}
-	}
-	SQL_FreeHandle(query);
-	
-	len = origLen = formatex(mkQuery,1535,"INSERT INTO `%s` VALUES ",sqlStreakTable);
-	
-	// now go through players, and make sure to start a streak for those who don't have one
-	for(i=0;i<playerNum;i++)
-	{
-		if(playerWins[i])
-		{
-			playerStreak[i]++; // if they won, they get one added to their streak
-
-			 // am I the champion?? also, in the case of a tie, allow the winner of this round to be considered the champ
-			if(playerStreak[i] > streakToBeat || (streakChamp != -1 && playerStreak[i] == streakToBeat && players[i] == winner))
-			{
-				streakToBeat = playerStreak[i];
-				streakChamp = i;
-			}
-			
-			// didn't find one with previous loop
-			if(playerStreak[i] == 1) // because of increment above, will be 1 at minimum
-			{			
-				// insert a new row. note that the streak is inserted as 0 because it gets incremented below.
-				len += formatex(mkQuery[len],1535-len,"('%iC','%s','0','%s','%i','%s'),",si,playerSafeAuthid[i],playerSafeName[i],systime,serverip);
-				
-				// cash in if we get too close
-				if(len >= 1200)
-				{
-					mkQuery[len-1] = ';';
-					mkQuery[len] = 0;
-
-					query = SQL_PrepareQuery(db,mkQuery);
-					SQL_ExecuteAndLog(query);
-					SQL_FreeHandle(query);
-					
-					len = origLen = formatex(mkQuery,1535,"INSERT INTO `%s` VALUES ",sqlStreakTable);
-				}
-			}
-		}
-	}
-	
-	// if we have some leftover query
-	if(len > origLen)
-	{
-		mkQuery[len-1] = ';';
-		mkQuery[len] = 0;
-
-		query = SQL_PrepareQuery(db,mkQuery);
-		SQL_ExecuteAndLog(query);
-		SQL_FreeHandle(query);
-	}
-
-	// update everyone's current streaks by +1
-	query = SQL_PrepareQuery(db,"UPDATE `%s` SET streak=streak+1 WHERE type='%iC' AND serverip='%s';",sqlStreakTable,si,serverip);
-	SQL_ExecuteAndLog(query);
-	SQL_FreeHandle(query);
-	
-	// somebody beat the champion!
-	if(streakToBeat && streakChamp != -1)
-	{
-		if(champRowExists) query = SQL_PrepareQuery(db,"UPDATE `%s` SET authid='%s', streak='%i', name='%s', timestamp='%i' WHERE type='%iR' AND serverip='%s' LIMIT 1;",sqlStreakTable,playerSafeAuthid[streakChamp],streakToBeat,playerSafeName[streakChamp],systime,si,serverip);
-		else query = SQL_PrepareQuery(db,"INSERT INTO `%s` VALUES ('%iR','%s','%i','%s',%i,'%s');",sqlStreakTable,si,playerSafeAuthid[streakChamp],streakToBeat,playerSafeName[streakChamp],systime,serverip);
-
-		SQL_ExecuteAndLog(query);
-		SQL_FreeHandle(query);
-	}
-#else
 	// go through and copy down the list of players who got a win last round
-	new sfStreak[2][4], tempFileName[65], streakRecord[53], streakFile, stats_streak_file[64];
-	get_pcvar_string(gg_stats_streak_file,stats_streak_file,63);
+	new sfStreak[2][4], tempFileName[257], streakRecord[53], streakFile, stats_streak_file[256];
+	copy(stats_streak_file,charsmax(stats_streak_file),gg_streak_path);
 
 	if(file_exists(stats_streak_file))
 	{
-		formatex(tempFileName,64,"%s2",stats_streak_file); // our temp file, append 2
+		formatex(tempFileName,charsmax(tempFileName),"%s2",stats_streak_file); // our temp file, append 2
 		rename_file(stats_streak_file,tempFileName,1); // copy it over to the temp name (relative flag)
 
 		// there are two basic types of lines:
@@ -7490,7 +9223,7 @@ public stats_award_points(winner)
 			if(sfLineData[1] == 'C')
 			{
 				// use sfLineData[3] to skip characters "0C " (should be a tab)
-				strtok(sfLineData[3],sfAuthid,31,sfStreak[0],3,'^t'); // split them up
+				strtok2(sfLineData[3],sfAuthid,31,sfStreak[0],3,'^t'); // split them up
 
 				for(i=0;i<playerNum;i++)
 				{
@@ -7518,8 +9251,8 @@ public stats_award_points(winner)
 	//new streakToBeat = 0, streakChamp = -1;
 	if(streakRecord[0]) // if there was a record, figure it out
 	{
-		strtok(streakRecord[3],dummy,1,sfLineData,82,'^t'); // cut off prefix and authid from the left
-		strtok(sfLineData,sfStreak[0],3,spareName,31,'^t'); // get our streak, and the name as well
+		strtok2(streakRecord[3],dummy,1,sfLineData,82,'^t'); // cut off prefix and authid from the left
+		strtok2(sfLineData,sfStreak[0],3,spareName,31,'^t'); // get our streak, and the name as well
 			
 		new pos = contain_char(spareName,'^t');
 		if(pos != -1) spareName[pos] = 0; // cut off the timestamp from the name
@@ -7566,7 +9299,6 @@ public stats_award_points(winner)
 
 		fclose(streakFile);
 	}
-#endif
 		
 	// we have a new champion, record their stuff
 	if(streakChamp != -1)
@@ -7580,139 +9312,19 @@ public stats_award_points(winner)
 	// NOW GO THROUGH THE FILE
 	//
 	
-#if defined SQL
-	new sfWins[2], sfPoints[2], sfStreak[2];
-
-	// do one query to grab all stats we need
-	len = formatex(mkQuery,1535,"SELECT authid,wins,points,streak,wins_tp,points_tp,streak_tp FROM `%s` WHERE serverip='%s' AND authid IN(",sqlTable,serverip);
-	for(i=0;i<playerNum;i++)
-	{
-		len += formatex(mkQuery[len],1535-len,"'%s'%s",playerSafeAuthid[i],(i==playerNum-1) ? "" : ",");
-	}
-	len += formatex(mkQuery[len],1535-len,");");
-	
-	// go through results
-	new foundMe[33];
-	
-	query = SQL_PrepareQuery(db,mkQuery);
-	if(SQL_ExecuteAndLog(query) && SQL_NumResults(query))
-	{
-		new Handle:query2;
-
-		while(SQL_MoreResults(query))
-		{
-			SQL_ReadResult(query,0,authid,63);
-			
-			for(i=0;i<playerNum;i++)
-			{
-				if(foundMe[i] || !equal(authid,playerSafeAuthid[i])) continue;
-				
-				// remember for later iterations
-				foundMe[i] = 1;
-				
-				sfWins[0] = SQL_ReadResult(query,1);
-				sfPoints[0] = SQL_ReadResult(query,2);
-				sfStreak[0] = SQL_ReadResult(query,3);
-				sfWins[1] = SQL_ReadResult(query,4);
-				sfPoints[1] = SQL_ReadResult(query,5);
-				sfStreak[1] = SQL_ReadResult(query,6);
-				
-				// if we set a new personal streak record, save it
-				intStreak = sfStreak[si];
-				pointsExtraction[players[i]][4] = intStreak; // show old record
-				if(playerStreak[i] > intStreak) intStreak = playerStreak[i];
-				
-				// so we can reference this for the MOTD
-				playerTotalPoints[i] = playerPoints[i] + sfPoints[si];
-				pointsExtraction[players[i]][0] = sfWins[si] + playerWins[i];
-				pointsExtraction[players[i]][1] = playerPoints[i];
-				pointsExtraction[players[i]][2] = playerTotalPoints[i];
-				pointsExtraction[players[i]][3] = playerStreak[i];
-				//pointsExtraction[players[i]][4] = intStreak; // uncomment to show new record
-				
-				// something worth updating
-				if(playerWins[i] || playerPoints[i])
-				{
-					if(si == 0) query2 = SQL_PrepareQuery(db,"UPDATE `%s` SET wins=wins+'%i',name='%s',timestamp='%i',points=points+'%i',streak='%i' WHERE authid='%s' AND serverip='%s' LIMIT 1;",sqlTable,playerWins[i],playerSafeName[i],systime,playerPoints[i],intStreak,playerSafeAuthid[i],serverip);
-					else query2 = SQL_PrepareQuery(db,"UPDATE `%s` SET wins_tp=wins_tp+'%i',name='%s',timestamp='%i',points_tp=points_tp+'%i',streak_tp='%i' WHERE authid='%s' AND serverip='%s' LIMIT 1;",sqlTable,playerWins[i],playerSafeName[i],systime,playerPoints[i],intStreak,playerSafeAuthid[i],serverip);
-
-					SQL_ExecuteAndLog(query2);
-					SQL_FreeHandle(query2);
-				}
-
-				break;
-			}
-
-			SQL_NextRow(query);
-		}
-	}
-	SQL_FreeHandle(query);
-
-	len = 0;
-	
-	// go through again for people we didn't find
-	for(i=0;i<playerNum;i++)
-	{
-		// nothing worth reporting, still refresh timestamp
-		if(!playerWins[i] && !playerPoints[i])
-		{
-			stats_refresh_timestamp(playerAuthid[i]);
-			continue;
-		}
-		
-		// already found me
-		if(foundMe[i]) continue;
-		
-		// so we can reference this for the MOTD
-		playerTotalPoints[i] = playerPoints[i];
-		pointsExtraction[players[i]][0] = playerWins[i];
-		pointsExtraction[players[i]][1] = playerPoints[i];
-		pointsExtraction[players[i]][2] = playerTotalPoints[i];
-		pointsExtraction[players[i]][3] = playerStreak[i];
-		pointsExtraction[players[i]][4] = 0; // show old record
-		
-		// haven't started yet
-		if(len == 0)
-		{
-			if(si == 0) len = origLen = formatex(mkQuery,1535,"INSERT INTO `%s` (authid,name,timestamp,wins,points,streak,serverip) VALUES ",sqlTable);
-			else len = origLen = formatex(mkQuery,1535,"INSERT INTO `%s` (authid,name,timestamp,wins_tp,points_tp,streak_tp,serverip) VALUES ",sqlTable);
-		}
-		
-		len += formatex(mkQuery[len],1535-len,"('%s','%s','%i','%i','%i','%i','%s'),",playerSafeAuthid[i],playerSafeName[i],systime,playerWins[i],playerTotalPoints[i],playerStreak[i],serverip);
-
-		// cash in if we get too close
-		if(len >= 1200)
-		{
-			mkQuery[len-1] = ';';
-			mkQuery[len] = 0;
-
-			query = SQL_PrepareQuery(db,mkQuery);
-			SQL_ExecuteAndLog(query);
-			SQL_FreeHandle(query);
-			
-			len = 0;
-		}
-	}
-
-	// if we have some leftover query
-	if(len && len > origLen)
-	{
-		mkQuery[len-1] = ';';
-		mkQuery[len] = 0;
-
-		query = SQL_PrepareQuery(db,mkQuery);
-		SQL_ExecuteAndLog(query);
-		SQL_FreeHandle(query);
-	}
-#else
 	new file;
-	get_pcvar_string(gg_stats_file,sfFile,63);
-	formatex(tempFileName,64,"%s2",sfFile); // our temp file, append 2
+	// Statistics path resolved during backend initialization.
+	formatex(tempFileName,charsmax(tempFileName),"%s2",sfFile); // our temp file, append 2
 
 	// create file if it does not exist (thanks Min2liz)
 	if(!file_exists(sfFile))
 	{
 		file = fopen(sfFile,"wt");
+		if (!file)
+		{
+			log_amx("ERROR: Cannot create statistics file: %s", sfFile);
+			return;
+		}
 		fclose(file);
 	}
 
@@ -7734,7 +9346,7 @@ public stats_award_points(winner)
 		lastSetNum = setNum;
 		if(setNum < playerNum)
 		{
-			strtok(sfLineData,sfAuthid,31,sfLineData,111,'^t'); // isolate authid
+			strtok2(sfLineData,sfAuthid,31,sfLineData,111,'^t'); // isolate authid
 			
 			// see if we need to change this one
 			for(i=0;i<playerNum;i++)
@@ -7744,14 +9356,14 @@ public stats_award_points(winner)
 					set[i] = 1;
 					setNum++;
 					
-					strtok(sfLineData,sfWins[0],5,sfLineData,111,'^t'); // get wins
-					strtok(sfLineData,dummy,1,sfLineData,111,'^t'); // get name
-					strtok(sfLineData,dummy,1,sfLineData,111,'^t'); // get timestamp
-					strtok(sfLineData,sfPoints[0],7,sfLineData,111,'^t'); // get points
-					strtok(sfLineData,sfStreak[0],3,sfLineData,111,'^t'); // get streak
+					strtok2(sfLineData,sfWins[0],5,sfLineData,111,'^t'); // get wins
+					strtok2(sfLineData,dummy,1,sfLineData,111,'^t'); // get name
+					strtok2(sfLineData,dummy,1,sfLineData,111,'^t'); // get timestamp
+					strtok2(sfLineData,sfPoints[0],7,sfLineData,111,'^t'); // get points
+					strtok2(sfLineData,sfStreak[0],3,sfLineData,111,'^t'); // get streak
 
-					strtok(sfLineData,sfWins[1],5,sfLineData,111,'^t'); // get teamplay wins
-					strtok(sfLineData,sfPoints[1],7,sfStreak[1],3,'^t'); // get teamplay points and teamplay streak
+					strtok2(sfLineData,sfWins[1],5,sfLineData,111,'^t'); // get teamplay wins
+					strtok2(sfLineData,sfPoints[1],7,sfStreak[1],3,'^t'); // get teamplay points and teamplay streak
 					
 					// if we set a new personal streak record, save it
 					intStreak = str_to_num(sfStreak[si]);
@@ -7808,7 +9420,6 @@ public stats_award_points(winner)
 
 	// remove our copy
 	delete_file(tempFileName);
-#endif
 		
 	new teamName[10], key_GAINED_POINTS[18];
 
@@ -7835,6 +9446,14 @@ public stats_award_points(winner)
 	}
 }
 
+
+// ============================================================================
+// PLAYER STATISTICS ACCESS AND SQL CACHE
+// ============================================================================
+
+/**
+ * Clear stats struct.
+ */
 stock stats_clear_struct(struct[statsData],clearAuthid=1)
 {
 	if(clearAuthid) struct[sdAuthid][0] = 0;
@@ -7848,55 +9467,179 @@ stock stats_clear_struct(struct[statsData],clearAuthid=1)
 	struct[sdStreak][1] = 0;
 }
 
-#if defined SQL
-// sql version] get a player's last used name and wins from save file
+// Local statistics only; SQL reads use the asynchronous player prefetch.
+/**
+ * Retrieve stats data.
+ */
 stock stats_get_data(authid[],struct[statsData],id=0)
 {
-	if(!sqlInit || !get_pcvar_num(gg_stats_mode))
-	{
-		stats_clear_struct(struct);
-		return 0;
-	}	
-
-	if(id > 0 && playerStats[id][sdAuthid][0]) // already saved my stats
-	{
-		struct = playerStats[id];
-		return 1;
-	}
-	
-	stats_clear_struct(struct);
-
-	SQL_QuoteString(db,safeName,63,authid);
-	query = SQL_PrepareQuery(db,"SELECT wins,name,points,streak,wins_tp,points_tp,streak_tp FROM `%s` WHERE authid='%s' AND serverip='%s' LIMIT 1;",sqlTable,safeName,serverip);
-
-	if(!SQL_ExecuteAndLog(query))
-	{
-		SQL_FreeHandle(query);
-		return 0;
-	}
-	
-	copy(struct[sdAuthid],31,authid); // setting authid will cache it if this is playerStats
-	
-	new found = SQL_NumResults(query);
-	if(found)
-	{
-		struct[sdWins][0] = SQL_ReadResult(query,0);
-		SQL_ReadResult(query,1,struct[sdName],31);
-		struct[sdPoints][0] = SQL_ReadResult(query,2);
-		struct[sdStreak][0] = SQL_ReadResult(query,3);
-		struct[sdWins][1] = SQL_ReadResult(query,4);
-		struct[sdPoints][1] = SQL_ReadResult(query,5);
-		struct[sdStreak][1] = SQL_ReadResult(query,6);
-	}	
-
-	if(id > 0) playerStats[id] = struct; // if this is a connected player, save it
-
-	SQL_FreeHandle(query);
-	return found;
+	if (id > 0 && gg_yapb_pending[id] && equal(authid,"BOT")) { stats_clear_struct(struct); return 0; }
+	if (!sqlInit) { stats_clear_struct(struct); return 0; }
+	if (gg_backend == 0) return stats_get_data_file(authid,struct,id);
+	return 0;
 }
-#else
+
+// Invalidate outstanding reads before a cache reset or a synchronous refresh.
+/**
+ * Advance the player cache generation and clear its loaded identity and state.
+ */
+stock gg_sql_invalidate_player(id)
+{
+    if(gg_debug_active(gg_debug_cache,3)) log_amx("[GG-SQL-DEBUG] cache invalidate slot=%i generation=%i",id,gg_sql_load_generation[id]);
+    gg_sql_load_generation[id]++;
+    gg_sql_load_state[id] = GG_STATS_UNLOADED;
+    gg_sql_load_auth[id][0] = 0;
+}
+
+// Menu reads must never fall back to synchronous SQL.
+/**
+ * Use matching cached statistics or request a prefetch without synchronous SQL.
+ */
+stock gg_sql_menu_cache(id,authid[])
+{
+    if(gg_sql_load_state[id] == GG_STATS_READY && equal(gg_sql_load_auth[id],authid) && equal(playerStats[id][sdAuthid],authid) && statsPosition[id][0] && statsPosition[id][1]) return 1;
+    if(gg_debug_active(gg_debug_cache,3)) log_amx("[GG-SQL-DEBUG] menu cache miss slot=%i state=%i",id,_:gg_sql_load_state[id]);
+    gg_sql_prefetch_player(id,authid);
+    return 0;
+}
+
+/**
+ * Queue player statistics and rank retrieval with slot, user ID, identity and generation context.
+ */
+stock gg_sql_prefetch_player(id,authid[])
+{
+    if(!sqlInit || gg_backend != 1 || !get_pcvar_num(gg_stats_mode) || tuple == Empty_Handle || db == Empty_Handle) return 0;
+    if(!authid[0] || (gg_yapb_pending[id] && equal(authid,"BOT"))) return 0;
+    if(!is_user_connected(id))
+    {
+        if(gg_debug_active(gg_debug_cache,3)) log_amx("[GG-SQL-DEBUG] prefetch deferred slot=%i userid=%i",id,get_user_userid(id));
+        return 0;
+    }
+    if(gg_sql_load_state[id] == GG_STATS_LOADING && equal(gg_sql_load_auth[id],authid)) return 1;
+    if(gg_sql_load_state[id] == GG_STATS_READY && equal(gg_sql_load_auth[id],authid) && equal(playerStats[id][sdAuthid],authid) && statsPosition[id][0] && statsPosition[id][1]) return 1;
+
+    gg_sql_invalidate_player(id);
+    new escaped[64], statement[2048], payload[36];
+    if(gg_sql_quote(escaped,charsmax(escaped),authid) < 0)
+    {
+        gg_sql_load_state[id] = GG_STATS_FAILED;
+        log_amx("Could not escape statistics identity for player prefetch");
+        return 0;
+    }
+    payload[0] = id;
+    payload[1] = get_user_userid(id);
+    payload[2] = gg_sql_load_generation[id];
+    copy(payload[3],31,authid);
+    copy(gg_sql_load_auth[id],31,authid);
+    gg_sql_load_state[id] = GG_STATS_LOADING;
+    payload[35] = get_pcvar_num(gg_stats_mode);
+    // Preserve the original competition ranking (strictly greater score plus one).
+    if(payload[35] == 2)
+        formatex(statement,charsmax(statement),"SELECT p.wins,p.name,p.points,p.streak,p.wins_tp,p.points_tp,p.streak_tp,IF(p.points>0 OR p.wins>0,(SELECT COUNT(*)+1 FROM `%s` r WHERE r.serverip=p.serverip AND r.points>p.points AND (r.wins>0 OR r.points>0)),-1),IF(p.points_tp>0 OR p.wins_tp>0,(SELECT COUNT(*)+1 FROM `%s` r WHERE r.serverip=p.serverip AND r.points_tp>p.points_tp AND (r.wins_tp>0 OR r.points_tp>0)),-1) FROM `%s` p WHERE p.authid='%s' AND p.serverip='%s' LIMIT 1;",sqlTable,sqlTable,sqlTable,escaped,serverip);
+    else
+        formatex(statement,charsmax(statement),"SELECT p.wins,p.name,p.points,p.streak,p.wins_tp,p.points_tp,p.streak_tp,IF(p.wins>0,(SELECT COUNT(*)+1 FROM `%s` r WHERE r.serverip=p.serverip AND r.wins>p.wins),-1),IF(p.wins_tp>0,(SELECT COUNT(*)+1 FROM `%s` r WHERE r.serverip=p.serverip AND r.wins_tp>p.wins_tp),-1) FROM `%s` p WHERE p.authid='%s' AND p.serverip='%s' LIMIT 1;",sqlTable,sqlTable,sqlTable,escaped,serverip);
+    SQL_ThreadQuery(tuple,"gg_sql_player_callback",statement,payload,sizeof payload);
+    return 1;
+}
+
+/**
+ * Process the asynchronous player statistics response using its request context.
+ */
+public gg_sql_player_callback(failstate,Handle:query,error[],errnum,data[],size,Float:queuetime)
+{
+    if(size != 36)
+    {
+        return;
+    }
+    new id = data[0];
+    if(gg_debug_active(gg_debug_cache,3)) log_amx("[GG-SQL-DEBUG] prefetch callback slot=%i userid=%i generation=%i state=%i queue=%.3f",id,data[1],data[2],failstate,queuetime);
+    if(id < 1 || id > 32) return;
+    if(!is_user_connected(id) || get_user_userid(id) != data[1])
+    {
+        if(gg_debug_active(gg_debug_cache,3)) log_amx("[GG-SQL-DEBUG] prefetch rejected slot=%i reason=connection",id);
+        if(gg_sql_load_generation[id] == data[2] && gg_sql_load_state[id] == GG_STATS_LOADING && !is_user_connected(id))
+            gg_sql_invalidate_player(id);
+        return;
+    }
+    if(gg_sql_load_generation[id] != data[2] || gg_sql_load_state[id] != GG_STATS_LOADING)
+    {
+        if(gg_debug_active(gg_debug_cache,3)) log_amx("[GG-SQL-DEBUG] prefetch rejected slot=%i reason=generation_or_state",id);
+        return;
+    }
+    new authid[32];
+    get_gg_authid(id,authid,31);
+    if(!equal(authid,data[3]) || !equal(authid,gg_sql_load_auth[id]) || !sqlInit || gg_backend != 1 || !get_pcvar_num(gg_stats_mode))
+    {
+        gg_sql_invalidate_player(id);
+        return;
+    }
+    gg_sql_handle_connection_error(failstate,errnum);
+    // Inject only after normal connection, identity and generation validation.
+    new fault = get_pcvar_num(gg_debug_handicap_fault);
+    if(!failstate && !is_user_bot(id) && gg_handicap_pending[id] && gg_handicap_generation[id] == data[2] && (fault == 1 || fault == 2) && gg_handicap_retry[id] < fault)
+    {
+        failstate = -99;
+        log_amx("[GG-SQL-DEBUG] handicap fault injected slot=%i userid=%i generation=%i attempt=%i mode=%i",id,data[1],data[2],gg_handicap_retry[id]+1,fault);
+    }
+    if(failstate != 0)
+    {
+        gg_sql_load_state[id] = GG_STATS_FAILED;
+        if(gg_handicap_pending[id] && gg_handicap_generation[id] == data[2] && gg_handicap_retry[id] < 1)
+        {
+            gg_handicap_retry[id]++;
+            if(gg_debug_active(gg_debug_handicap,2)) log_amx("[GG-SQL-DEBUG] handicap ranking retry slot=%i attempt=%i",id,gg_handicap_retry[id]);
+            gg_sql_prefetch_player(id,authid);
+            gg_handicap_generation[id] = gg_sql_load_generation[id];
+            if(gg_sql_load_state[id] == GG_STATS_LOADING) return;
+        }
+        gg_handicap_dispatch(id,1);
+        if(failstate == -99) log_amx("[GG-SQL-DEBUG] simulated ranking failure exhausted slot=%i",id);
+        else log_amx("Threaded player statistics load failed (state %i, error #%i): %s",failstate,errnum,error);
+        return;
+    }
+    if(data[35] != get_pcvar_num(gg_stats_mode))
+    {
+        gg_sql_invalidate_player(id);
+        gg_sql_prefetch_player(id,authid);
+        return;
+    }
+    new soloRank = -1, teamRank = -1;
+    stats_clear_struct(playerStats[id]);
+    copy(playerStats[id][sdAuthid],31,authid);
+    if(SQL_NumResults(query))
+    {
+        playerStats[id][sdWins][0] = SQL_ReadResult(query,0);
+        SQL_ReadResult(query,1,playerStats[id][sdName],31);
+        playerStats[id][sdPoints][0] = SQL_ReadResult(query,2);
+        playerStats[id][sdStreak][0] = SQL_ReadResult(query,3);
+        playerStats[id][sdWins][1] = SQL_ReadResult(query,4);
+        playerStats[id][sdPoints][1] = SQL_ReadResult(query,5);
+        playerStats[id][sdStreak][1] = SQL_ReadResult(query,6);
+        soloRank = SQL_ReadResult(query,7);
+        teamRank = SQL_ReadResult(query,8);
+    }
+    gg_sql_load_state[id] = GG_STATS_READY;
+    if(gg_debug_active(gg_debug_cache,2)) log_amx("[GG-SQL-DEBUG] cache ready slot=%i generation=%i",id,gg_sql_load_generation[id]);
+    if(!statsPosition[id][0]) statsPosition[id][0] = soloRank;
+    if(!statsPosition[id][1]) statsPosition[id][1] = teamRank;
+    if(gg_debug_active(gg_debug_ranking,2)) log_amx("[GG-SQL-DEBUG] ranking ready slot=%i solo=%i team=%i mode=%i",id,statsPosition[id][0],statsPosition[id][1],data[35]);
+    gg_handicap_dispatch(id,0);
+    // Refresh only menus that are still open. Never reopen a dismissed menu.
+    new menu, keys;
+    for(new viewer=1;viewer<=maxPlayers;viewer++)
+    {
+        if(!is_user_connected(viewer) || is_user_bot(viewer)) continue;
+        get_user_menu(viewer,menu,keys);
+        if(viewer == id && menu == level_menu) show_level_menu(viewer);
+        else if(menu == scores_menu) show_scores_menu(viewer);
+    }
+}
+
 // get a player's last used name and wins from save file
-stock stats_get_data(authid[],struct[statsData],id=0)
+/**
+ * Retrieve stats data file.
+ */
+stock stats_get_data_file(authid[],struct[statsData],id=0)
 {	
 	if(!get_pcvar_num(gg_stats_mode))
 	{
@@ -7904,7 +9647,7 @@ stock stats_get_data(authid[],struct[statsData],id=0)
 		return 0;
 	}	
 
-	get_pcvar_string(gg_stats_file,sfFile,63);
+	// Statistics path resolved during backend initialization.
 	if(!file_exists(sfFile))
 	{
 		stats_clear_struct(struct);
@@ -7913,22 +9656,28 @@ stock stats_get_data(authid[],struct[statsData],id=0)
 
 	if(id > 0)
 	{
-		if(playerStats[id][sdAuthid][0]) // already saved my stats
+		if(playerStats[id][sdAuthid][0] && equal(playerStats[id][sdAuthid],authid)) // matching cached identity
 		{
 			struct = playerStats[id];
 			return 1;
 		}
-		else if(statsPosition[id][0] > 0) // check top regular players
+		if(statsPosition[id][0] > 0) // check top regular players
 		{
 			ArrayGetArray(statsArray,ArrayGetCell(statsPointers[0],statsPosition[id][0]-1),playerStats[id]);
-			struct = playerStats[id];
-			return 1;
+			if(equal(playerStats[id][sdAuthid],authid))
+			{
+				struct = playerStats[id];
+				return 1;
+			}
 		}
-		else if(statsPosition[id][1] > 0) // check top teamplay players
+		if(statsPosition[id][1] > 0) // check top teamplay players
 		{
 			ArrayGetArray(statsArray,ArrayGetCell(statsPointers[1],statsPosition[id][1]-1),playerStats[id]);
-			struct = playerStats[id];
-			return 1;
+			if(equal(playerStats[id][sdAuthid],authid))
+			{
+				struct = playerStats[id];
+				return 1;
+			}
 		}
 	}
 	
@@ -7944,7 +9693,7 @@ stock stats_get_data(authid[],struct[statsData],id=0)
 	while(!feof(file))
 	{
 		fgets(file,sfLineData,111);
-		strtok(sfLineData,sfAuthid,31,dummy,1,'^t'); // isolate authid
+		strtok2(sfLineData,sfAuthid,31,dummy,1,'^t'); // isolate authid
 
 		// this is it, stop now because our data is already stored in sfLineData
 		if(equal(authid,sfAuthid))
@@ -7969,10 +9718,27 @@ stock stats_get_data(authid[],struct[statsData],id=0)
 
 	return found;
 }
-#endif
 	
-#if defined SQL
+
+// ============================================================================
+// RANKING RETRIEVAL AND SORTING
+// ============================================================================
+
+/**
+ * Retrieve stats top players.
+ */
 public stats_get_top_players()
+{
+	if (!sqlInit) return 0;
+	if (gg_backend == 1) return stats_get_top_players_sql();
+	if (gg_backend == 0) return stats_get_top_players_file();
+	return 0;
+}
+
+/**
+ * Retrieve stats top players SQL.
+ */
+stock stats_get_top_players_sql()
 {
 	if(!ggActive || !sqlInit) return 0;
 	
@@ -7985,16 +9751,24 @@ public stats_get_top_players()
 	{
 		if(is_user_connected(i))
 		{
+			// Wait for deferred YaPB authorization before starting statistics reads.
+			if(gg_yapb_pending[i])
+			{
+				continue;
+			}
 			get_gg_authid(i,authid,31,stats_ip);
-			if(!statsPosition[i][0]) stats_get_position(i,authid,0);
-			if(!statsPosition[i][1]) stats_get_position(i,authid,1);
+			if(!statsPosition[i][0] || !statsPosition[i][1])
+                gg_sql_prefetch_player(i,authid);
 		}
 	}
 
 	return 1;
 }
-#else
-public stats_get_top_players()
+
+/**
+ * Retrieve stats top players file.
+ */
+stock stats_get_top_players_file()
 {
 	if(!ggActive || !sqlInit) return 0;
 	
@@ -8004,7 +9778,7 @@ public stats_get_top_players()
 	// we never made the array
 	if(!statsArray)
 	{
-		get_pcvar_string(gg_stats_file,sfFile,63);
+		// Statistics path resolved during backend initialization.
 		if(!file_exists(sfFile)) return 0;
 
 		statsArray = ArrayCreate(statsData,100);
@@ -8069,6 +9843,9 @@ public stats_get_top_players()
 }
 
 // seems to be slightly faster without passing in extra data, and this is how we used to do it, so we'll continue to use two functions to sort
+/**
+ * Sort stats pointer reg.
+ */
 public stats_pointer_sort_reg(Array:array,item1,item2)
 {
 	static score[2];
@@ -8094,6 +9871,9 @@ public stats_pointer_sort_reg(Array:array,item1,item2)
 }
 
 // seems to be slightly faster without passing in extra data, and this is how we used to do it, so we'll continue to use two functions to sort
+/**
+ * Sort stats pointer tp.
+ */
 public stats_pointer_sort_tp(Array:array,item1,item2)
 {
 	static score[2];
@@ -8117,7 +9897,6 @@ public stats_pointer_sort_tp(Array:array,item1,item2)
 
 	return score[1] - score[0];
 }
-#endif
 
 // gather up our players
 /*public stats_get_top_players()
@@ -8127,7 +9906,7 @@ public stats_pointer_sort_tp(Array:array,item1,item2)
 	glStatsMode = get_pcvar_num(gg_stats_mode);
 	if(!glStatsMode) return 0;
 	
-	get_pcvar_string(gg_stats_file,sfFile,63);
+	// Statistics path resolved during backend initialization.
 	if(!file_exists(sfFile)) return 0;
 
 	new buildMe[2], stats_split = get_pcvar_num(gg_stats_split);
@@ -8248,70 +10027,22 @@ public stats_pointer_sort_tp(Array:array,item1,item2)
 	return score[1] - score[0];
 }*/
 
-#if defined SQL
-// get a player's overall position
+// Local statistics only; SQL reads use the asynchronous player prefetch.
+/**
+ * Retrieve stats position.
+ */
 stats_get_position(id,authid[],si)
 {
-	if(!sqlInit) return 0; // can't get position yet
+	if (!sqlInit) return 0;
+	if (gg_backend == 0) return stats_get_position_file(id,authid,si);
+	return 0;
+}
 
-	statsPosition[id][si] = -1; // mark that we've at least attempted to find it
-	
-	new stats_mode = get_pcvar_num(gg_stats_mode), myPoints;
-	
-	// first, we need to get their current amount of wins/points. this allows us to make sure that they are really in the database
-	// (could cause problems with a sub-query returning 0 instead of NULL) and that they actually have wins/points for the current
-	// stats mode (could cause problems when they are in the database but you are looking at their stats index for which they have
-	// no points). then, we might as well use the result for our ranking query instead of using a sub-query.
-	
-	// if we don't have the cached stats, we will have to do a query to get the wins/points. since we would be doing a query for it
-	// anyway, we might as well just get all of the stats at once.
-	stats_get_data(authid,playerStats[id],id); // stats_get_data should automatically manage cache
-	
-	if(stats_mode == 2) myPoints = playerStats[id][sdPoints][si];
-	else myPoints = playerStats[id][sdWins][si];
-
-	if(myPoints <= 0 && (stats_mode != 2 || playerStats[id][sdWins][si] <= 0)) return -1;
-	
-	new winsColumn[8], pointsColumn[10];
-
-	if(si == 0)
-	{
-		winsColumn = "wins";
-		pointsColumn = "points";
-	}
-	else
-	{
-		winsColumn = "wins_tp";
-		pointsColumn = "points_tp";
-	}
-
-	// select the number of people who have a score higher than I do, plus one. query from Giuseppe Maxia
-	if(stats_mode == 2)
-	{
-		query = SQL_PrepareQuery(db,"SELECT COUNT(*)+1 AS ranking FROM `%s` WHERE %s > %i AND serverip='%s' AND (%s > 0 OR %s > 0);",
-			sqlTable,pointsColumn,myPoints,serverip,winsColumn,pointsColumn);
-	}
-	else
-	{
-		query = SQL_PrepareQuery(db,"SELECT COUNT(*)+1 AS ranking FROM `%s` WHERE %s > %i AND serverip='%s';",
-			sqlTable,winsColumn,myPoints,serverip);
-	}
-		
-	if(SQL_ExecuteAndLog(query))
-	{
-		new result = SQL_ReadResult(query,0);
-		SQL_FreeHandle(query);
-
-		statsPosition[id][si] = result;
-		return result;
-	}
-	
-	SQL_FreeHandle(query);
-	return -1;
-}	
-#else
 // get a player's overall position
-stats_get_position(id,authid[],si)
+/**
+ * Retrieve stats position file.
+ */
+stock stats_get_position_file(id,authid[],si)
 {
 	if(statsArray && statsPointers[si] && statsSize[si])
 	{
@@ -8332,11 +10063,28 @@ stats_get_position(id,authid[],si)
 	
 	return 0;
 }
-#endif
 
-#if defined SQL
-// prune old entries
+
+// ============================================================================
+// STATISTICS PRUNING
+// ============================================================================
+
+/**
+ * Prune stats.
+ */
 stock stats_prune(max_time=-1)
+{
+	if (!sqlInit) return 0;
+	if (gg_backend == 1) return stats_prune_sql(max_time);
+	if (gg_backend == 0) return stats_prune_file(max_time);
+	return 0;
+}
+
+// prune old entries
+/**
+ * Prune stats SQL.
+ */
+stock stats_prune_sql(max_time=-1)
 {
 	if(!sqlInit) return 0;
 
@@ -8362,18 +10110,21 @@ stock stats_prune(max_time=-1)
 
 	return -1;
 }
-#else
+
 // prune old entries
-stock stats_prune(max_time=-1)
+/**
+ * Prune stats file.
+ */
+stock stats_prune_file(max_time=-1)
 {
-	get_pcvar_string(gg_stats_file,sfFile,63);
+	// Statistics path resolved during backend initialization.
 	if(!file_exists(sfFile)) return 0;
 	
 	if(max_time == -1) max_time = get_pcvar_num(gg_stats_prune); // -1 = use value from cvar
 	if(max_time == 0) return 0; // 0 = no pruning
 
-	new tempFileName[33];
-	formatex(tempFileName,32,"%s2",sfFile); // our temp file, append 2
+	new tempFileName[257];
+	formatex(tempFileName,charsmax(tempFileName),"%s2",sfFile); // our temp file, append 2
 
 	// copy over current stat file
 	rename_file(sfFile,tempFileName,1); // relative
@@ -8395,13 +10146,13 @@ stock stats_prune(max_time=-1)
 		original = sfLineData;
 
 		// break off authid
-		strtok(sfLineData,dummy,1,sfLineData,111,'^t');
+		strtok2(sfLineData,dummy,1,sfLineData,111,'^t');
 
 		// break off wins
-		strtok(sfLineData,dummy,1,sfLineData,111,'^t');
+		strtok2(sfLineData,dummy,1,sfLineData,111,'^t');
 
 		// break off name, and thus get timestamp
-		strtok(sfLineData,dummy,1,sfTimestamp,11,'^t');
+		strtok2(sfLineData,dummy,1,sfTimestamp,11,'^t');
 		copyc(sfTimestamp,11,sfTimestamp,'^t'); // cut off points
 
 		// not too old, write it to our new file
@@ -8418,193 +10169,402 @@ stock stats_prune(max_time=-1)
 	delete_file(tempFileName);
 	return removed;
 }
-#endif
 
 //**********************************************************************
 // SQL FUNCTIONS
 //**********************************************************************
 
-#if defined SQL
 	
-// opens the database
-stock sql_init(creation_queries=1)
+// Initialize the central AMXX SQL configuration only when needed.
+
+// ============================================================================
+// SQL CONFIGURATION, INITIALIZATION AND RECOVERY
+// ============================================================================
+
+/**
+ * Prepare amxx SQL.
+ */
+stock gg_prepare_amxx_sql()
 {
+	if (get_cvar_pointer("amx_sql_host") && get_cvar_pointer("amx_sql_user")
+		&& get_cvar_pointer("amx_sql_pass") && get_cvar_pointer("amx_sql_db"))
+		return 1;
+
+	new configsDir[128], sqlConfig[160];
+	get_configsdir(configsDir, charsmax(configsDir));
+	formatex(sqlConfig, charsmax(sqlConfig), "%s/sql.cfg", configsDir);
+	if (!file_exists(sqlConfig))
+	{
+		log_amx("AMXX SQL configuration file missing; statistics initialization failed");
+		return 0;
+	}
+
+	// Empty required defaults prevent accidental connections with fallback credentials.
+	if (!get_cvar_pointer("amx_sql_host")) create_cvar("amx_sql_host", "", FCVAR_PROTECTED);
+	if (!get_cvar_pointer("amx_sql_user")) create_cvar("amx_sql_user", "", FCVAR_PROTECTED);
+	if (!get_cvar_pointer("amx_sql_pass")) create_cvar("amx_sql_pass", "", FCVAR_PROTECTED);
+	if (!get_cvar_pointer("amx_sql_db")) create_cvar("amx_sql_db", "", FCVAR_PROTECTED);
+	if (!get_cvar_pointer("amx_sql_type")) create_cvar("amx_sql_type", "mysql", FCVAR_PROTECTED);
+	if (!get_cvar_pointer("amx_sql_timeout")) create_cvar("amx_sql_timeout", "60", FCVAR_PROTECTED);
+	// sql.cfg may contain this setting; GunGame does not use it.
+	if (!get_cvar_pointer("amx_sql_table")) create_cvar("amx_sql_table", "admins", FCVAR_PROTECTED);
+
+	server_cmd("exec ^"%s^"", sqlConfig);
+	server_exec();
+	log_amx("Central AMXX SQL configuration loaded by GunGame (sql.cfg)");
+	return 1;
+}
+
+// Resolve the same language preference for web URLs and language-specific text.
+/**
+ * Retrieve effective language.
+ */
+stock gg_get_effective_language(id, lang[3])
+{
+	lang[0] = 0;
+	if(get_cvar_num("amx_client_languages") && id >= 1 && id <= maxPlayers && is_user_connected(id))
+	{
+		get_user_info(id,"lang",lang,2);
+		if(strlen(lang) == 2 && lang_exists(lang)) return;
+	}
+	get_cvar_string("amx_language",lang,2);
+	if(strlen(lang) != 2 || !lang_exists(lang)) copy(lang,2,"en");
+}
+
+// Read-only session diagnostics; never change stored player identities here.
+/**
+ * Log SQL charset.
+ */
+stock gg_sql_log_charset(Handle:result,const source[])
+{
+	if(!SQL_NumResults(result)) return;
+	new client[32], connection[32], results[32];
+	SQL_ReadResult(result,0,client,charsmax(client));
+	SQL_ReadResult(result,1,connection,charsmax(connection));
+	SQL_ReadResult(result,2,results,charsmax(results));
+	if(gg_debug_active(gg_debug_sql,2)) log_amx("[GG-SQL-DEBUG] charset source=%s client=%s connection=%s results=%s",source,client,connection,results);
+}
+
+// opens the database
+/**
+ * Initialize SQL.
+ */
+stock sql_init()
+{
+	if (gg_backend != 1 || gg_sql_missing) return 0;
+	sqlInit = 0;
+	remove_task(TASK_SQL_RECONNECT);
+	gg_sql_probe_pending = false;
+	gg_sql_init_pending = false;
+	gg_sql_init_generation++;
 	new host[128], user[128], pass[128], dbname[128];
 	get_pcvar_string(gg_sql_host,host,127);
 	get_pcvar_string(gg_sql_user,user,127);
 	get_pcvar_string(gg_sql_pass,pass,127);
 	get_pcvar_string(gg_sql_db,dbname,127);
 
-	new sqlErrorCode, sqlError[1024];
 	
 	// free old stuff if reconnecting
-	if(tuple != Empty_Handle) SQL_FreeHandleAndClear(tuple);
 	if(db != Empty_Handle) SQL_FreeHandleAndClear(db);
+	if(tuple != Empty_Handle) SQL_FreeHandleAndClear(tuple);
 
-	tuple = SQL_MakeDbTuple(host,user,pass,dbname);
+	// Use the central AMXX SQL settings only when all custom fields are empty.
+	new bool:useAmxxSql = !host[0] && !user[0] && !pass[0] && !dbname[0];
+	if (useAmxxSql)
+	{
+		if (!gg_prepare_amxx_sql()) return 0;
+		new hostCvar = get_cvar_pointer("amx_sql_host");
+		new userCvar = get_cvar_pointer("amx_sql_user");
+		new passCvar = get_cvar_pointer("amx_sql_pass");
+		new dbCvar = get_cvar_pointer("amx_sql_db");
+		if (!hostCvar || !userCvar || !passCvar || !dbCvar)
+		{
+			log_amx("AMXX SQL configuration unavailable; statistics initialization failed");
+			return 0;
+		}
+		get_pcvar_string(hostCvar,host,charsmax(host));
+		get_pcvar_string(userCvar,user,charsmax(user));
+		get_pcvar_string(passCvar,pass,charsmax(pass));
+		get_pcvar_string(dbCvar,dbname,charsmax(dbname));
+		log_amx("SQL configuration: AMX Mod X (sql.cfg)");
+	}
+	else
+	{
+		log_amx("SQL configuration: Custom GunGame configuration");
+	}
+
+	// Do not mix connection settings or fall back to another backend.
+	if (!host[0] || !user[0] || !dbname[0])
+	{
+		log_amx("Incomplete SQL configuration: host, user and database are required");
+		return 0;
+	}
+
+	// GunGame uses MySQL-specific queries, regardless of amx_sql_type.
+	if (!SQL_SetAffinity("mysql"))
+	{
+		log_amx("MySQL driver unavailable; statistics initialization failed");
+		return 0;
+	}
+
+	new timeout = 0;
+	if (useAmxxSql)
+	{
+		new timeoutCvar = get_cvar_pointer("amx_sql_timeout");
+		if (timeoutCvar) timeout = get_pcvar_num(timeoutCvar);
+		if (timeout <= 0) timeout = 60;
+	}
+	tuple = SQL_MakeDbTuple(host,user,pass,dbname,timeout);
 	
 	if(tuple == Empty_Handle)
 	{
-		log_amx("Could not create database tuple. Error #%i: %s",sqlErrorCode,sqlError);
+		log_amx("Could not create database tuple");
 		return 0;
 	}
 	
-	db = SQL_Connect(tuple,sqlErrorCode,sqlError,1023);
-
-	if(db == Empty_Handle)
+	// Configure the tuple before opening either synchronous or threaded connections.
+	if(!SQL_SetCharset(tuple,"utf8mb4"))
 	{
-		log_amx("Could not connect to database. Error #%i: %s",sqlErrorCode,sqlError);
+		log_amx("[GG-SQL-DEBUG] charset tuple setup failed; SQL initialization aborted");
+		SQL_FreeHandleAndClear(tuple);
 		return 0;
 	}
-	
-	if(creation_queries)
-	{
-		// set up the main table, unfortunately we have to split it up to avoid "input line too long" compile errors
-		get_pcvar_string(gg_sql_table,sqlTable,127);
-		
-		new super_long_query[716],
-		len = formatex(super_long_query,715,"CREATE TABLE IF NOT EXISTS `%s`(`authid` VARCHAR(31) NOT NULL,`wins` SMALLINT(6) default '0',`name` VARCHAR(31) NOT NULL,`timestamp` INT(10) UNSIGNED default '0',`points` MEDIUMINT(9) default '0',`streak` SMALLINT(6) default '0',`wins_tp` SMALLINT(6) default '0',`points_tp` MEDIUMINT(9) default '0',",sqlTable);
-		formatex(super_long_query[len],715-len,"`streak_tp` SMALLINT(6) default '0',`serverip` VARCHAR(63) NOT NULL,PRIMARY KEY(`authid`,`serverip`),INDEX(`wins`),INDEX(`points`),INDEX(`wins_tp`), INDEX(`points_tp`));");
+	if(gg_debug_active(gg_debug_sql,2)) log_amx("[GG-SQL-DEBUG] charset tuple configured=utf8mb4");
 
-		query = SQL_PrepareQuery(db,super_long_query);
-		if(!SQL_ExecuteAndLog(query))
-		{
-			SQL_FreeHandle(query);
-			return 0;
-		}
-		
-		// set up the streaks table
-		get_pcvar_string(gg_sql_streak_table,sqlStreakTable,127);
-		
-		query = SQL_PrepareQuery(db,"CREATE TABLE IF NOT EXISTS `%s`(`type` ENUM('0C','0R','1C','1R') default NULL,`authid` VARCHAR(31) NOT NULL,`streak` SMALLINT(6) default '0',`name` VARCHAR(31) NOT NULL,`timestamp` INT(10) UNSIGNED default '0',`serverip` VARCHAR(63) NOT NULL,INDEX(`authid`,`serverip`),INDEX(`type`));",sqlStreakTable);
-		if(!SQL_ExecuteAndLog(query))
-		{
-			SQL_FreeHandle(query);
-			return 0;
-		}
-		
-		// set up the players table
-		get_pcvar_string(gg_sql_winmotd_table,sqlPlayersTable,127);
-		
-		len = formatex(super_long_query,715,"CREATE TABLE IF NOT EXISTS `%s`(`id` tinyint(4) NOT NULL default '0',`authid` varchar(31) NOT NULL,`name` varchar(31) NOT NULL,`team` tinyint(4) default '0',`level` tinyint(4) default '0',`weapon` varchar(23) NOT NULL,`flags` tinyint(4) default '0',`wins` smallint(6) default '0',`points` mediumint(9) default '0',`new_points` mediumint(9) default '0',`record_streak` smallint(6) default '0',",sqlPlayersTable);
-		formatex(super_long_query[len],715-len,"`current_streak` smallint(6) default '0',`stats_position` smallint(6) unsigned default '0',`teamtime_winning` smallint(6) unsigned default '0',`teamtime_losing` smallint(6) unsigned default '0',`timestamp` int(10) unsigned default '0',`serverip` varchar(63) NOT NULL, PRIMARY KEY(`id`));");
-
-		query = SQL_PrepareQuery(db,super_long_query);
-		if(!SQL_ExecuteAndLog(query))
-		{
-			SQL_FreeHandle(query);
-			return 0;
-		}
-		
-		SQL_FreeHandle(query);
-	}
-
-	sqlInit = 1;
+	get_pcvar_string(gg_sql_table,sqlTable,127);
+	get_pcvar_string(gg_sql_streak_table,sqlStreakTable,127);
+	get_pcvar_string(gg_sql_winmotd_table,sqlPlayersTable,127);
+	gg_sql_reconnect_task();
 	return 1;
 }
 
-// closes the database
-public sql_uninit()
+// Schedule recovery only for transport failures, never for ordinary SQL errors.
+/**
+ * Handle sql handle connection error processing.
+ */
+stock gg_sql_handle_connection_error(failstate,errnum)
 {
-	if(sqlInit)
+    if(failstate == TQUERY_CONNECT_FAILED || (failstate != 0 && (errnum == 2006 || errnum == 2013 || errnum == 2055)))
+        gg_sql_schedule_reconnect();
+}
+
+/**
+ * Schedule SQL reconnect.
+ */
+stock gg_sql_schedule_reconnect()
+{
+    if(gg_backend != 1 || gg_sql_missing || tuple == Empty_Handle) return;
+    if(!gg_sql_probe_pending && !gg_sql_init_pending && !task_exists(TASK_SQL_RECONNECT))
+        set_task_ex(15.0,"gg_sql_reconnect_task",TASK_SQL_RECONNECT);
+}
+
+/**
+ * Handle sql reconnect task processing.
+ */
+public gg_sql_reconnect_task()
+{
+    // Clear the one-shot task before any branch schedules another attempt.
+    remove_task(TASK_SQL_RECONNECT);
+    if(gg_backend != 1 || tuple == Empty_Handle || gg_sql_probe_pending || gg_sql_init_pending) return;
+    if(gg_sql_save_pending) { gg_sql_schedule_reconnect(); return; }
+    new payload[1];
+    payload[0] = gg_sql_init_generation;
+    gg_sql_probe_pending = true;
+    SQL_ThreadQuery(tuple,"gg_sql_probe_callback","SELECT 1",payload,sizeof payload);
+}
+
+/**
+ * Process the asynchronous sql probe response.
+ */
+public gg_sql_probe_callback(failstate,Handle:result,error[],errnum,data[],size,Float:queuetime)
+{
+    if(size != 1 || data[0] != gg_sql_init_generation || gg_backend != 1 || tuple == Empty_Handle) return;
+    gg_sql_probe_pending = false;
+    if(failstate)
+    {
+        log_amx("[GG-SQL-DEBUG] reconnect probe failed state=%i error=%i: %s",failstate,errnum,error);
+        gg_sql_schedule_reconnect();
+        return;
+    }
+    if(gg_sql_save_pending) { gg_sql_schedule_reconnect(); return; }
+    if(sqlInit)
+    {
+        // Threaded queries use independent connections; retain the quote handle.
+        new authid[32];
+        for(new id=1;id<=maxPlayers;id++)
+        {
+            if(!is_user_connected(id) || gg_yapb_pending[id] || gg_handicap_pending[id] || gg_sql_load_state[id] != GG_STATS_FAILED) continue;
+            get_gg_authid(id,authid,charsmax(authid));
+            gg_sql_prefetch_player(id,authid);
+        }
+        log_amx("[GG-SQL-DEBUG] reconnect probe successful; failed caches refreshed");
+        return;
+    }
+    // Retain the charset-aware quote handle; the worker probe reduces but does not eliminate blocking risk.
+    if(gg_debug_active(gg_debug_sql,2)) log_amx("[GG-SQL-DEBUG] reconnect probe successful; initializing SQL backend");
+    new sqlErrorCode, sqlError[1024];
+    if(db == Empty_Handle) db = SQL_Connect(tuple,sqlErrorCode,sqlError,charsmax(sqlError));
+    if(db == Empty_Handle)
+    {
+        log_amx("Could not connect to database. Error #%i",sqlErrorCode);
+        gg_sql_schedule_reconnect();
+        return;
+    }
+    if(!SQL_SetCharset(db,"utf8mb4"))
+    {
+        SQL_FreeHandleAndClear(db);
+        gg_sql_schedule_reconnect();
+        return;
+    }
+    gg_sql_init_pending = true;
+    gg_sql_init_submit(0);
+}
+
+// Serialize initialization queries; readiness is published only after the final DDL.
+/**
+ * Initialize SQL submit.
+ */
+stock gg_sql_init_submit(stage)
+{
+	new payload[2], super_long_query[1024], len;
+	payload[0] = gg_sql_init_generation;
+	payload[1] = stage;
+	switch(stage)
 	{
-		if(db != Empty_Handle) SQL_FreeHandleAndClear(db);
-		if(tuple != Empty_Handle) SQL_FreeHandleAndClear(tuple);
+		case 0: copy(super_long_query,charsmax(super_long_query),"SELECT @@character_set_client,@@character_set_connection,@@character_set_results");
+		case 1:
+		{
+			len = formatex(super_long_query,1023,"CREATE TABLE IF NOT EXISTS `%s`(`authid` VARCHAR(31) NOT NULL,`wins` SMALLINT(6) default '0',`name` VARCHAR(31) NOT NULL,`timestamp` INT(10) UNSIGNED default '0',`points` MEDIUMINT(9) default '0',`streak` SMALLINT(6) default '0',`wins_tp` SMALLINT(6) default '0',`points_tp` MEDIUMINT(9) default '0',",sqlTable);
+			formatex(super_long_query[len],1023-len,"`streak_tp` SMALLINT(6) default '0',`serverip` VARCHAR(63) NOT NULL,PRIMARY KEY(`authid`,`serverip`),INDEX(`wins`),INDEX(`points`),INDEX(`wins_tp`), INDEX(`points_tp`));");
+		}
+		case 2: formatex(super_long_query,charsmax(super_long_query),"CREATE TABLE IF NOT EXISTS `%s`(`type` ENUM('0C','0R','1C','1R') default NULL,`authid` VARCHAR(31) NOT NULL,`streak` SMALLINT(6) default '0',`name` VARCHAR(31) NOT NULL,`timestamp` INT(10) UNSIGNED default '0',`serverip` VARCHAR(63) NOT NULL,INDEX(`authid`,`serverip`),INDEX(`type`));",sqlStreakTable);
+		case 3:
+		{
+			len = formatex(super_long_query,1023,"CREATE TABLE IF NOT EXISTS `%s`(`id` tinyint(4) NOT NULL default '0',`authid` varchar(31) NOT NULL,`name` varchar(31) NOT NULL,`team` tinyint(4) default '0',`level` tinyint(4) default '0',`weapon` varchar(23) NOT NULL,`flags` tinyint(4) default '0',`wins` smallint(6) default '0',`points` mediumint(9) default '0',`new_points` mediumint(9) default '0',`record_streak` smallint(6) default '0',",sqlPlayersTable);
+			formatex(super_long_query[len],1023-len,"`current_streak` smallint(6) default '0',`stats_position` smallint(6) unsigned default '0',`teamtime_winning` smallint(6) unsigned default '0',`teamtime_losing` smallint(6) unsigned default '0',`timestamp` int(10) unsigned default '0',`serverip` varchar(63) NOT NULL, PRIMARY KEY(`serverip`,`timestamp`,`id`));");
+		}
+		default: return;
+	}
+	if(gg_debug_active(gg_debug_sql,2)) log_amx("[GG-SQL-DEBUG] init queued stage=%i generation=%i",stage,payload[0]);
+	SQL_ThreadQuery(tuple,"gg_sql_init_callback",super_long_query,payload,sizeof payload);
+}
+
+/**
+ * Process the asynchronous sql init response.
+ */
+public gg_sql_init_callback(failstate,Handle:result,error[],errnum,data[],size,Float:queuetime)
+{
+	if(size != 2 || data[0] != gg_sql_init_generation || gg_backend != 1 || tuple == Empty_Handle || db == Empty_Handle || sqlInit || !gg_sql_init_pending || data[1] < 0 || data[1] > 3) return;
+	if(failstate)
+	{
+		log_amx("[GG-SQL-DEBUG] init failed stage=%i state=%i error=%i: %s",data[1],failstate,errnum,error);
+		// The charset probe is diagnostic; preserve the original nonfatal behavior.
+		if(data[1] != 0 || failstate == TQUERY_CONNECT_FAILED || errnum == 2006 || errnum == 2013 || errnum == 2055) { gg_sql_init_pending = false; gg_sql_schedule_reconnect(); return; }
+	}
+	else if(data[1] == 0) gg_sql_log_charset(result,"threaded");
+	if(data[1] < 3) { gg_sql_init_submit(data[1]+1); return; }
+	if(data[1] != 3) return;
+	gg_sql_init_pending = false;
+	sqlInit = 1;
+	log_amx("SQL statistics backend initialized successfully");
+	// Recover joins that occurred while the schema was being initialized.
+	new authid[32];
+	for(new id=1;id<=maxPlayers;id++)
+	{
+		if(!is_user_connected(id) || gg_yapb_pending[id]) continue;
+		get_gg_authid(id,authid,charsmax(authid));
+		if(!authid[0] || equal(authid,"STEAM_ID_PENDING") || equal(authid,"VALVE_ID_PENDING")) continue;
+		gg_sql_prefetch_player(id,authid);
+		if(gg_refresh_on_join()) stats_refresh_timestamp(authid);
 	}
 }
 
+// closes the database
+/**
+ * Handle sql uninit processing.
+ */
+public sql_uninit()
+{
+	remove_task(TASK_SQL_RECONNECT);
+	gg_sql_probe_pending = false;
+	gg_sql_init_pending = false;
+	gg_sql_init_generation++;
+	if(db != Empty_Handle) SQL_FreeHandleAndClear(db);
+	if(tuple != Empty_Handle) SQL_FreeHandleAndClear(tuple);
+	sqlInit = 0;
+}
+
+// Preserve charset-aware SQLx escaping and reject unavailable handles or short buffers.
+/**
+ * Escape SQL.
+ */
+stock gg_sql_quote(output[], maxlen, const input[])
+{
+    output[0] = 0;
+    if(db == Empty_Handle || maxlen < 2 * strlen(input)) return -1;
+    new written = SQL_QuoteString(db,output,maxlen,input);
+    if(written < 0 || written > maxlen)
+    {
+        output[0] = 0;
+        return -1;
+    }
+    return written;
+}
+
 // frees a handle and resets its variable to empty
+/**
+ * Handle SQL FreeHandleAndClear processing.
+ */
 SQL_FreeHandleAndClear(&Handle:arg)
 {
+	if(arg == Empty_Handle) return;
 	SQL_FreeHandle(arg);
 	arg = Empty_Handle;
 }
 
-// execute a query and log any errors that come up
-stock SQL_ExecuteAndLog(&Handle:queryHandle,const queryStr[]="")
-{
-	static preventLoopback = 0;
-
-	if(!SQL_Execute(queryHandle))
-	{
-		static error[256];
-		new errnum = SQL_QueryError(queryHandle,error,255);
-
-		if(queryStr[0]) log_amx("Could not execute query [%s] -- err #%i [%s]",queryStr,errnum,error);
-		else
-		{
-			SQL_GetQueryString(queryHandle,mkQuery,255);
-			log_amx("Could not execute query [%s] -- err #%i [%s]",mkQuery,errnum,error);
-		}
-		
-		// fix thanks to 2inspyr
-		if(errnum == 2006 && !preventLoopback) // MySQL server has gone away
-		{
-			log_amx("Attempting to reconnect to server");
-
-			if(sql_init(0)) // no creation queries
-			{
-				log_amx("Successfully reconnected to server, executing query again");
-				
-				SQL_GetQueryString(queryHandle,mkQuery,1535);
-				new Handle:newQuery = SQL_PrepareQuery(db,mkQuery);
-				
-				preventLoopback = 1;
-				SQL_ExecuteAndLog(newQuery);
-				
-				// transfer handles
-				SQL_FreeHandle(queryHandle);
-				queryHandle = newQuery;
-
-				preventLoopback = 0;
-				return 1;
-				
-				//return SQL_Execute(queryHandle);
-			}
-			else
-			{
-				log_amx("Could not reconnect to server");
-				
-				preventLoopback = 0;
-				return 0;
-			}
-		}
-
-		preventLoopback = 0;
-		return 0;
-	}
-
-	preventLoopback = 0;
-	return 1;
-}
-
+/**
+ * Prune SQL qhandler.
+ */
 public sql_qhandler_prune(failstate,Handle:query,error[],errnum,data[],size,Float:queuetime)
 {
-	if(error[0])
+	gg_sql_handle_connection_error(failstate,errnum);
+	if(failstate != 0)
 	{
-		SQL_GetQueryString(query,mkQuery,255);
+		if(query != Empty_Handle) SQL_GetQueryString(query,mkQuery,255);
+		else mkQuery[0] = 0;
 		log_amx("Could not execute query [%s] -- err #%i [%s]",mkQuery,errnum,error);
 	}
 	else log_amx("%L",LANG_SERVER,"PRUNING",sqlTable,SQL_NumRows(query));
 }
 	
+/**
+ * Handle sql qhandler dummy processing.
+ */
 public sql_qhandler_dummy(failstate,Handle:query,error[],errnum,data[],size,Float:queuetime)
 {
-	if(error[0])
+	gg_sql_handle_connection_error(failstate,errnum);
+	if(failstate != 0)
 	{
-		SQL_GetQueryString(query,mkQuery,255);
+		if(query != Empty_Handle) SQL_GetQueryString(query,mkQuery,255);
+		else mkQuery[0] = 0;
 		log_amx("Could not execute query [%s] -- err #%i [%s]",mkQuery,errnum,error);
 	}
 }
 
-#endif
 
 //**********************************************************************
 // WHATEV
 //**********************************************************************
 
-#if !defined SQL
 // monitor stats mode and resort if it changed
+
+// ============================================================================
+// GAMEPLAY AND CONFIGURATION HELPERS
+// ============================================================================
+
+/**
+ * Handle recheck stats sorting processing.
+ */
 public recheck_stats_sorting()
 {
 	new stats_mode = get_pcvar_num(gg_stats_mode);
@@ -8636,10 +10596,12 @@ public recheck_stats_sorting()
 
 	lastStatsMode = stats_mode;
 }
-#endif
 
 // task is set on a potential team change, and removed on an
 // approved team change, so if we reach it, deduct level
+/**
+ * Handle delayed suicide processing.
+ */
 public delayed_suicide(taskid)
 {
 	new id = taskid-TASK_DELAYED_SUICIDE;
@@ -8647,6 +10609,9 @@ public delayed_suicide(taskid)
 }
 
 // remove those annoying pesky pistols, if they haven't been already
+/**
+ * Strip starting pistols.
+ */
 strip_starting_pistols(id)
 {
 	if(!is_user_alive(id)) return;
@@ -8667,6 +10632,9 @@ strip_starting_pistols(id)
 }
 
 // weapon display
+/**
+ * Handle status display processing.
+ */
 stock status_display(id,status=1)
 {
 	new sdisplay = get_pcvar_num(gg_status_display);
@@ -8748,6 +10716,9 @@ stock status_display(id,status=1)
 }
 
 // hide someone's money display
+/**
+ * Hide money.
+ */
 public hide_money(id)
 {
 	// hide money
@@ -8766,6 +10737,9 @@ public hide_money(id)
 //**********************************************************************
 
 // gets a players info, intended for other plugins to callfunc
+/**
+ * Retrieve player info.
+ */
 public get_player_info(id,&rf_level,&rf_score,rf_lvlWeapon[],len,&rf_spawnProtected,rf_statsPosition[2])
 {
 	rf_level = level[id];
@@ -8777,6 +10751,9 @@ public get_player_info(id,&rf_level,&rf_score,rf_lvlWeapon[],len,&rf_spawnProtec
 }
 
 // analyzes the weapon order and saves it into our variables
+/**
+ * Configure weapon order.
+ */
 public setup_weapon_order()
 {
 	new weaponOrder[(MAX_WEAPONS*16)+1], temp[27];
@@ -8797,7 +10774,7 @@ public setup_weapon_order()
 		// we still have a comma, go up to it
 		if(contain_char(weaponOrder,',') != -1)
 		{
-			strtok(weaponOrder,temp,26,weaponOrder,MAX_WEAPONS*16,',');
+			strtok2(weaponOrder,temp,26,weaponOrder,MAX_WEAPONS*16,',');
 			trim(temp);
 			strtolower(temp);
 		}
@@ -8835,6 +10812,9 @@ public setup_weapon_order()
 }
 
 // gets the goal for a level, taking into account default and custom values
+/**
+ * Retrieve level goal.
+ */
 stock get_level_goal(level,id=0)
 {
 	if(level < 1) return 1;
@@ -8858,6 +10838,9 @@ stock get_level_goal(level,id=0)
 }
 
 // gets the level a player should use for his level
+/**
+ * Retrieve level weapon.
+ */
 stock get_level_weapon(theLevel,var[],varLen)
 {
 	if(warmup > 0 && warmupWeapon[0]) copy(var,varLen,warmupWeapon);
@@ -8866,6 +10849,9 @@ stock get_level_weapon(theLevel,var[],varLen)
 }
 
 // easy function to precache sound via cvar
+/**
+ * Handle precache sound by cvar processing.
+ */
 stock precache_sound_by_cvar(pcvar)
 {
 	new value[64];
@@ -8874,6 +10860,9 @@ stock precache_sound_by_cvar(pcvar)
 }
 
 // precache sounds with a little bit of magic
+/**
+ * Handle precache sound special processing.
+ */
 stock precache_sound_special(sound[])
 {
 	if(!sound[0]) return;
@@ -8895,6 +10884,59 @@ stock precache_sound_special(sound[])
 
 // gets a player's "authid", or whatever token we want to identify them with.
 // if you already know the value of gg_stats_ip, you can pass it in and save a cvar check.
+// The post-forward sees the original YaPB ID; AMXX get_user_authid still says BOT.
+// Only store observed Steam-format IDs, and guard against reused player slots.
+
+// ============================================================================
+// YAPB IDENTITY AND CONFIGURATION HELPERS
+// ============================================================================
+
+/**
+ * Handle yapb auth post processing.
+ */
+public gg_yapb_auth_post(id)
+{
+	if(id < 1 || id > GG_YAPB_MAX_CLIENTS || !is_user_connected(id) || !is_user_bot(id))
+		return FMRES_IGNORED;
+
+	if(!gg_yapb_fake_cvar || !get_pcvar_num(gg_yapb_fake_cvar))
+		return FMRES_IGNORED;
+
+	new userid = get_user_userid(id);
+	if(userid <= 0) return FMRES_IGNORED;
+
+	new auth[32];
+	get_orig_retval(auth,charsmax(auth));
+	if(strncmp(auth,"STEAM_",6) != 0) return FMRES_IGNORED;
+
+	new changed = (gg_yapb_userid[id] != userid || !equal(gg_yapb_authid[id],auth));
+
+	// Preserve the original YaPB Steam ID without a prefix.
+	formatex(gg_yapb_authid[id],charsmax(gg_yapb_authid[]),"%s",auth);
+	gg_yapb_userid[id] = userid;
+	if(changed && gg_yapb_pending[id] == userid)
+	{
+		remove_task(TASK_YAPB_AUTH+id);
+		set_task_ex(0.1,"gg_yapb_finish_auth",TASK_YAPB_AUTH+id);
+	}
+	return FMRES_IGNORED;
+}
+
+/**
+ * Clear YaPB.
+ */
+stock gg_yapb_clear(id)
+{
+	if(id < 1 || id > GG_YAPB_MAX_CLIENTS) return;
+	remove_task(TASK_YAPB_AUTH+id);
+	gg_yapb_pending[id] = 0;
+	gg_yapb_userid[id] = 0;
+	gg_yapb_authid[id][0] = 0;
+}
+
+/**
+ * Retrieve gg authid.
+ */
 stock get_gg_authid(id,ret[],len,stats_ip=-777)
 {
 	new mode = stats_ip;
@@ -8902,7 +10944,26 @@ stock get_gg_authid(id,ret[],len,stats_ip=-777)
 
 	switch(mode)
 	{
-		case 0: return get_user_authid(id,ret,len); // 0 = by authid
+		case 0:
+		{
+			if(id >= 1 && id <= GG_YAPB_MAX_CLIENTS && is_user_bot(id)
+				&& gg_yapb_fake_cvar && get_pcvar_num(gg_yapb_fake_cvar)
+				&& gg_yapb_userid[id] > 0
+				&& gg_yapb_userid[id] == get_user_userid(id)
+				&& gg_yapb_authid[id][0])
+			{
+				copy(ret,len,gg_yapb_authid[id]);
+				return strlen(ret);
+			}
+			new result = get_user_authid(id,ret,len);
+			if(is_user_bot(id) && gg_yapb_fake_cvar && get_pcvar_num(gg_yapb_fake_cvar)
+				&& gg_yapb_userid[id] == get_user_userid(id) && gg_yapb_authid[id][0])
+			{
+				copy(ret,len,gg_yapb_authid[id]);
+				return strlen(ret);
+			}
+			return result; // original behavior if no YaPB ID observed
+		}
 		case -1, 2: return get_user_name(id,ret,len); // 2 = by name
 	}
 	
@@ -8910,6 +10971,9 @@ stock get_gg_authid(id,ret[],len,stats_ip=-777)
 }
 
 // figure out which gungame.cfg (or gungame_teamplay.cfg) file to use
+/**
+ * Retrieve gg config file.
+ */
 stock get_gg_config_file(teamplay=0,filename[],len)
 {
 	formatex(filename,len,"%s/gungame%s.cfg",cfgDir,(teamplay) ? "_teamplay" : "");
@@ -8922,6 +10986,9 @@ stock get_gg_config_file(teamplay=0,filename[],len)
 }
 
 // executes what's inside of the config file
+/**
+ * Execute gg config file.
+ */
 stock exec_gg_config_file(teamplay=0,allowToggling=0)
 {
 	new oldActive = ggActive, oldTeamplay = get_pcvar_num(gg_teamplay);
@@ -8933,6 +11000,7 @@ stock exec_gg_config_file(teamplay=0,allowToggling=0)
 		server_cmd("exec ^"%s^"",cfgFile);
 		server_exec();
 	}
+	else if (!teamplay && gg_backend == -1) log_amx("gungame.cfg not found; using current CVAR values");
 	
 	// remember old values of gg_enabled and gg_teamplay if toggling is not allowed.
 	// this is like we just turned teamplay on via command and we want to make sure
@@ -8964,6 +11032,9 @@ stock exec_gg_config_file(teamplay=0,allowToggling=0)
 }
 
 // figure out which gungame_mapcycle file to use
+/**
+ * Retrieve gg mapcycle file.
+ */
 stock get_gg_mapcycle_file(filename[],len)
 {
 	static testFile[64];
@@ -9004,6 +11075,14 @@ stock get_gg_mapcycle_file(filename[],len)
 }
 
 // another easy function to play sound via cvar
+
+// ============================================================================
+// SOUND, LEADER AND MESSAGE HELPERS
+// ============================================================================
+
+/**
+ * Play sound by cvar.
+ */
 stock play_sound_by_cvar(id,pcvar)
 {
 	static value[64];
@@ -9016,12 +11095,18 @@ stock play_sound_by_cvar(id,pcvar)
 }
 
 // a taskable play_sound_by_cvar
+/**
+ * Play sound by cvar task.
+ */
 public play_sound_by_cvar_task(params[2])
 {
 	play_sound_by_cvar(params[0],params[1]);
 }
 
 // this functions take a filepath, but manages speak/mp3 play
+/**
+ * Play sound.
+ */
 stock play_sound(id,value[])
 {
 	if(!value[0]) return;
@@ -9035,6 +11120,9 @@ stock play_sound(id,value[])
 }
 
 // find the highest level player and his level
+/**
+ * Retrieve leader.
+ */
 stock get_leader(&retLevel=0,&retNumLeaders=0,&retRunnerUp=0)
 {
 	new player, leader, numLeaders, runnerUp;
@@ -9071,6 +11159,9 @@ stock get_leader(&retLevel=0,&retNumLeaders=0,&retRunnerUp=0)
 }
 
 // gets the number of players on a particular level
+/**
+ * Handle num players on level processing.
+ */
 stock num_players_on_level(checkLvl)
 {
 	new player, result;
@@ -9085,6 +11176,9 @@ stock num_players_on_level(checkLvl)
 // a butchered version of teame06's CS Color Chat Function.
 // actually it's now almost completely different, but that's
 // where I started from.
+/**
+ * Handle gungame print processing.
+ */
 gungame_print(id,custom,tag,msg[],any:...)
 {
 	new messages = get_pcvar_num(gg_messages);
@@ -9098,7 +11192,7 @@ gungame_print(id,custom,tag,msg[],any:...)
 		players[0] = id;
 		num = 1;
 	}
-	else get_players(players,num);
+	else get_players_ex(players,num);
 
 	for(i=0;i<num;i++)
 	{
@@ -9163,6 +11257,9 @@ gungame_print(id,custom,tag,msg[],any:...)
 }
 
 // show a HUD message to a user
+/**
+ * Handle gungame hudmessage processing.
+ */
 gungame_hudmessage(id,Float:holdTime,msg[],any:...)
 {
 	new messages = get_pcvar_num(gg_messages);
@@ -9178,6 +11275,14 @@ gungame_hudmessage(id,Float:holdTime,msg[],any:...)
 }
 
 // start a map vote
+
+// ============================================================================
+// MAP VOTING AND MAP TRANSITIONS
+// ============================================================================
+
+/**
+ * Start mapvote.
+ */
 stock start_mapvote()
 {
 	new dmmName[24], plugin;
@@ -9195,17 +11300,17 @@ stock start_mapvote()
 	{
 		log_amx("Starting a map vote from Nextmap Chooser");
 
-		new oldWinLimit = get_cvar_num("mp_winlimit"), oldMaxRounds = get_cvar_num("mp_maxrounds");
-		set_cvar_num("mp_winlimit",0); // skip winlimit check
-		set_cvar_num("mp_maxrounds",-1); // trick plugin to think game is almost over
+		new oldWinLimit = get_pcvar_num(gg_api_mp_winlimit), oldMaxRounds = get_pcvar_num(gg_api_mp_maxrounds);
+		set_pcvar_num(gg_api_mp_winlimit,0); // skip winlimit check
+		set_pcvar_num(gg_api_mp_maxrounds,-1); // trick plugin to think game is almost over
 
 		// call the vote
 		if(callfunc_begin_i(get_func_id("voteNextmap",plugin),plugin) == 1)
 			callfunc_end();
 
 		// set maxrounds back
-		set_cvar_num("mp_winlimit",oldWinLimit);
-		set_cvar_num("mp_maxrounds",oldMaxRounds);
+		set_pcvar_num(gg_api_mp_winlimit,oldWinLimit);
+		set_pcvar_num(gg_api_mp_maxrounds,oldMaxRounds);
 	}
 
 	// Deagles' Map Management 2.30b - deagsmapmanage230b.amxx
@@ -9225,9 +11330,9 @@ stock start_mapvote()
 	{
 		log_amx("Starting a map vote from Nextmap Chooser 4");
 	
-		new oldWinLimit = get_cvar_num("mp_winlimit"), oldMaxRounds = get_cvar_num("mp_maxrounds");
-		set_cvar_num("mp_winlimit",0); // skip winlimit check
-		set_cvar_num("mp_maxrounds",1); // trick plugin to think game is almost over
+		new oldWinLimit = get_pcvar_num(gg_api_mp_winlimit), oldMaxRounds = get_pcvar_num(gg_api_mp_maxrounds);
+		set_pcvar_num(gg_api_mp_winlimit,0); // skip winlimit check
+		set_pcvar_num(gg_api_mp_maxrounds,1); // trick plugin to think game is almost over
 
 		// deactivate g_buyingtime variable
 		if(callfunc_begin_i(get_func_id("buyFinished",plugin),plugin) == 1)
@@ -9241,8 +11346,8 @@ stock start_mapvote()
 		}
 
 		// set maxrounds back
-		set_cvar_num("mp_winlimit",oldWinLimit);
-		set_cvar_num("mp_maxrounds",oldMaxRounds);
+		set_pcvar_num(gg_api_mp_winlimit,oldWinLimit);
+		set_pcvar_num(gg_api_mp_maxrounds,oldMaxRounds);
 	}
 
 	// NOTHING?
@@ -9260,17 +11365,17 @@ stock start_mapvote()
 			callfunc_end();
 		}*/
 
-		new oldWinLimit = get_cvar_num("mp_winlimit"), Float:oldTimeLimit = get_cvar_float("mp_timelimit");
-		set_cvar_num("mp_winlimit",99999); // don't allow extending
-		set_cvar_float("mp_timelimit",0.0); // don't wait for buying
+		new oldWinLimit = get_pcvar_num(gg_api_mp_winlimit), Float:oldTimeLimit = get_pcvar_float(gg_api_mp_timelimit);
+		set_pcvar_num(gg_api_mp_winlimit,99999); // don't allow extending
+		set_pcvar_float(gg_api_mp_timelimit,0.0); // don't wait for buying
 		set_cvar_num("enforce_timelimit",1); // don't change map after vote
 
 		// call the vote
 		if(callfunc_begin_i(get_func_id("startthevote",plugin),plugin) == 1)
 			callfunc_end();
 
-		set_cvar_num("mp_winlimit",oldWinLimit);
-		set_cvar_float("mp_timelimit",oldTimeLimit);
+		set_pcvar_num(gg_api_mp_winlimit,oldWinLimit);
+		set_pcvar_float(gg_api_mp_timelimit,oldTimeLimit);
 
 		// disallow further voting
 		/*if(callfunc_begin("dmapcyclemode",dmmName) == 1)
@@ -9279,17 +11384,23 @@ stock start_mapvote()
 			callfunc_end();
 		}*/
 		
-		set_task(20.1,"dmm_stop_mapchange");
+		set_task_ex(20.1,"dmm_stop_mapchange");
 	}
 }
 
 // stop DMM from changing maps after the vote has been tallied
+/**
+ * Stop dmm mapchange.
+ */
 public dmm_stop_mapchange()
 {
 	remove_task(333333,1); // outside
 }
 
 // set amx_nextmap to the next map
+/**
+ * Set nextmap.
+ */
 stock set_nextmap()
 {
 	new mapCycleFile[64];
@@ -9322,7 +11433,7 @@ stock set_nextmap()
 		fgets(file,lineData,31);
 
 		trim(lineData);
-		replace(lineData,31,".bsp",""); // remove extension
+		replace_stringex(lineData,31,".bsp",""); // remove extension
 		new len = strlen(lineData) - 2;
 
 		// stop at a comment
@@ -9379,6 +11490,9 @@ stock set_nextmap()
 }
 
 // go to amx_nextmap
+/**
+ * Handle goto nextmap processing.
+ */
 public goto_nextmap()
 {
 	new mapCycleFile[64];
@@ -9415,6 +11529,14 @@ public goto_nextmap()
 }
 
 // find a player's weapon entity
+
+// ============================================================================
+// WEAPON, STRING AND TEAM UTILITY FUNCTIONS
+// ============================================================================
+
+/**
+ * Retrieve weapon ent.
+ */
 stock get_weapon_ent(id,wpnid=0,wpnName[]="")
 {
 	// who knows what wpnName will be
@@ -9434,6 +11556,9 @@ stock get_weapon_ent(id,wpnid=0,wpnName[]="")
 }
 
 // counts number of chars in a string, by (probably) Twilight Suzuka
+/**
+ * Count str.
+ */
 stock str_count(str[],searchchar)
 {
 	new i = 0;
@@ -9449,6 +11574,9 @@ stock str_count(str[],searchchar)
 }
 
 // find the nth occurance of a character in a string, based on str_count
+/**
+ * Find str num.
+ */
 stock str_find_num(str[],searchchar,number)
 {
 	new i;
@@ -9467,6 +11595,9 @@ stock str_find_num(str[],searchchar,number)
 }
 
 // works like contain, but looks only for a specific character
+/**
+ * Handle contain char processing.
+ */
 stock contain_char(str[],chara)
 {
 	new i;
@@ -9479,6 +11610,9 @@ stock contain_char(str[],chara)
 }
 
 // cuts a snippet out of a string
+/**
+ * Remove snippet.
+ */
 stock remove_snippet(string[],strLen,start,end)
 {
 	new i, newpos;
@@ -9495,6 +11629,9 @@ stock remove_snippet(string[],strLen,start,end)
 }
 
 // gets a player id that triggered certain logevents, by VEN
+/**
+ * Retrieve loguser index.
+ */
 stock get_loguser_index()
 {
 	static loguser[80], name[32];
@@ -9505,6 +11642,9 @@ stock get_loguser_index()
 }
 
 // checks if a space is vacant, by VEN
+/**
+ * Handle is hull vacant processing.
+ */
 stock bool:is_hull_vacant(const Float:origin[3],hull)
 {
 	new tr = 0;
@@ -9517,6 +11657,9 @@ stock bool:is_hull_vacant(const Float:origin[3],hull)
 }
 
 // gets a weapon's category, just a shortcut to the weaponSlots table basically
+/**
+ * Retrieve weapon category.
+ */
 stock get_weapon_category(id=0,name[]="")
 {
 	if(name[0])
@@ -9535,6 +11678,9 @@ stock get_weapon_category(id=0,name[]="")
 }
 
 // if a player is allowed to score (at least 1 rival player)
+/**
+ * Handle can score processing.
+ */
 stock can_score(id)
 {
 	if(!is_user_connected(id)) return 0;
@@ -9551,6 +11697,9 @@ stock can_score(id)
 }
 
 // returns 1 if there are only bots in the server, 0 if not
+/**
+ * Handle only bots processing.
+ */
 stock only_bots()
 {
 	new player;
@@ -9565,6 +11714,9 @@ stock only_bots()
 }
 
 // gives a player a weapon efficiently
+/**
+ * Handle the give weapon HamSandwich hook.
+ */
 stock ham_give_weapon(id,const weapon[])
 {
 	if(!equal(weapon,"weapon_",7)) return 0;
@@ -9586,6 +11738,9 @@ stock ham_give_weapon(id,const weapon[])
 }
  
 // takes a weapon from a player efficiently
+/**
+ * Handle the strip weapon HamSandwich hook.
+ */
 stock ham_strip_weapon(id,const weapon[])
 {
  	if(!equal(weapon,"weapon_",7)) return 0;
@@ -9616,6 +11771,9 @@ stock ham_strip_weapon(id,const weapon[])
 }
 
 // gets the weapon that a killer used, just like CHalfLifeMultiplay::DeathNotice
+/**
+ * Retrieve killer weapon.
+ */
 stock get_killer_weapon(killer,inflictor,retVar[],retLen)
 {
 	static killer_weapon_name[32];
@@ -9653,6 +11811,9 @@ stock get_killer_weapon(killer,inflictor,retVar[],retLen)
 }
 
 // gets a team's color
+/**
+ * Retrieve team color.
+ */
 stock get_team_color(CsTeams:team,ret[],retLen)
 {
 	switch(team)
@@ -9665,6 +11826,9 @@ stock get_team_color(CsTeams:team,ret[],retLen)
 }
 
 // gets the name of a team
+/**
+ * Retrieve team name.
+ */
 stock get_team_name(CsTeams:team,ret[],retLen)
 {
 	switch(team)
@@ -9678,6 +11842,9 @@ stock get_team_name(CsTeams:team,ret[],retLen)
 }
 
 // gets the amount of players on a team
+/**
+ * Count team player.
+ */
 stock team_player_count(CsTeams:team)
 {
 	new player, count;
@@ -9691,6 +11858,9 @@ stock team_player_count(CsTeams:team)
 }
 
 // is this player on a valid team?
+/**
+ * Handle on valid team processing.
+ */
 on_valid_team(id)
 {
 	new CsTeams:team = cs_get_user_team(id);
@@ -9698,6 +11868,9 @@ on_valid_team(id)
 }
 
 // gets a number's suffix. sort of bad, has to convert to string.
+/**
+ * Retrieve number suffix.
+ */
 stock get_number_suffix(number,ret[],retLen)
 {
 	static str[8];

@@ -1,2 +1,32 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+* text=auto eol=lf
+*.sma text
+*.inc text
+*.cfg text
+*.php text
+*.md text
+*.htm text
+*.html text
+*.amxx binary
+*.wav binary
+*.mp3 binary
+*.zip binary
+
+*.ini text
+*.cpp text
+*.h text
+*.css text
+*.js text
+*.json text
+*.svg text
+*.dll binary
+*.so binary
+*.exe binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary

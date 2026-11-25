@@ -1,0 +1,3 @@
+# Licensing status
+
+This is not a license grant. The supplied original archives have been inspected; an explicit GunGame license was not identified in their SMA headers. Verify upstream terms before public distribution. CSDM documentation states GPL version 2 or later; the GPL-2.0 text is included under licenses/. GameQ and Bootstrap Icons notices are in web/THIRD-PARTY-NOTICES.md and web/licenses/. Rights to original sounds, map artwork, game logos and historical website documentation remain unverified. Preserve all upstream notices. No new blanket license is asserted. Public distribution remains pending rights verification.

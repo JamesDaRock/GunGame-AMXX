@@ -1,0 +1,2921 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8"/>
+        <meta content="width=device-width, initial-scale=1" name="viewport"/>
+        <title>GunGame AMXX 3++ – Readme</title>
+        <style>
+            * {
+                box-sizing:border-box
+            }
+            body {
+                margin:0;
+                background:#f1f3f5;
+                color:#202833;
+                font:15px/1.6 system-ui,Arial,sans-serif
+            }
+            main {
+                max-width:980px;
+                margin:auto;
+                background:white;
+                padding:36px 48px
+            }
+            header {
+                border-bottom:4px solid #ba782a;
+                padding-bottom:20px
+            }
+            h1 {
+                font-size:36px;
+                line-height:1.15;
+                margin:8px 0
+            }
+            h2 {
+                font-size:23px;
+                border-bottom:1px solid #d5dce2;
+                padding-bottom:8px;
+                margin-top:35px
+            }
+            small,.muted {
+                color:#566372
+            }
+            nav {
+                background:#edf1f4;
+                padding:18px;
+                margin:24px 0
+            }
+            nav ol {
+                columns:2;
+                margin:0
+            }
+            a {
+                color:#185c87
+            }
+            table {
+                width:100%;
+                border-collapse:collapse;
+                margin:15px 0
+            }
+            th,td {
+                text-align:left;
+                padding:9px 12px;
+                border-bottom:1px solid #dce2e7;
+                vertical-align:top
+            }
+            th {
+                background:#253442;
+                color:white
+            }
+            td:first-child {
+                width:40%;
+                overflow-wrap:anywhere
+            }
+            code {
+                font:13px/1.5 monospace;
+                color:#713d0c
+            }
+            footer {
+                margin-top:40px;
+                border-top:1px solid #ddd;
+                padding-top:16px
+            }
+            @media(max-width:650px) {
+                main {
+                    padding:20px
+                }
+                nav ol {
+                    columns:1
+                }
+                h1 {
+                    font-size:28px
+                }
+            }
+            @media print {
+                body {
+                    background:white
+                }
+                main {
+                    padding:0
+                }
+                tr {
+                    break-inside:avoid
+                }
+            }
+            details {
+                margin:16px 0
+            }
+            summary {
+                cursor:pointer;
+                padding:10px;
+                background:#edf1f4
+            }
+            #reference td:first-child,#schema td:first-child {
+                width:auto
+            }
+            pre {
+                white-space:pre-wrap;
+                background:#edf1f4;
+                padding:14px
+            }
+            td {
+                overflow-wrap:anywhere
+            }
+        </style>
+    </head>
+    <body>
+        <main>
+            <header>
+                <small>RELEASE DOCUMENTATION / 3.0.0-rc3</small>
+                <h1>GunGame AMXX 3++</h1>
+                <p>pur3gaming Edition · Counter-Strike 1.6 / Condition Zero</p>
+                <p class="muted">Originally developed by Avalanche · Maintained by JamesDaRock</p>
+            </header>
+            <nav aria-label="Contents">
+                <strong>Contents</strong>
+                <ol>
+                    <li><a href="#intro">Introduction</a></li>
+                    <li><a href="#new">What is new in 3++</a></li>
+                    <li>
+                        <a href="#install">Requirements and installation</a>
+                        <ul>
+                            <li><a href="#install-mapcycle">Map rotation</a></li>
+                            <li><a href="#install-mapconfigs">Per-map configuration</a></li>
+                            <li><a href="#install-spawns">Random spawns and CSDM</a></li>
+                        </ul>
+                    </li>
+                    <li><a href="#config">Gameplay configuration</a></li>
+                    <li><a href="#players">Player commands</a></li>
+                    <li><a href="#admin">Administration</a></li>
+                    <li><a href="#sql">Statistics and SQL</a></li>
+                    <li><a href="#web">Web statistics and winner MOTD</a></li>
+                    <li><a href="#compat">Compatibility and testing</a></li>
+                    <li><a href="#debug">Troubleshooting</a></li>
+                    <li><a href="#credits">Credits, license and resources</a></li>
+                    <li><a href="#reference">Complete CVAR inventory</a></li>
+                    <li><a href="#schema">SQL setup and schema</a></li>
+                    <li>
+                        <a href="#legacy">Historical documentation archive</a>
+                        <ul>
+                            <li><a href="#legacy-cvars">Original CVAR archive</a></li>
+                            <li><a href="#legacy-sql-content">Original SQL archive</a></li>
+                        </ul>
+                    </li>
+                    <li>
+                        <a href="#faq">Frequently asked questions</a>
+                        <ul>
+                            <li><a href="#legacy-faq">Original FAQ archive</a></li>
+                        </ul>
+                    </li>
+                </ol>
+            </nav>
+            <section id="intro">
+                <h2>1. Introduction</h2>
+                <p>GunGame AMXX 3++ is an independent continuation of Avalanche’s GunGame AMXX 2.13c for Counter-Strike 1.6 and Condition Zero. Players advance through a configurable weapon sequence by earning kills. Completing the final level wins the match. Teamplay shares progression within a team; deathmatch allows players to respawn instead of waiting for the next round.</p>
+                <p>The pur3gaming Edition aims to preserve the original gameplay while improving compatibility, statistics and database handling.</p>
+            </section>
+            <section id="new">
+                <h2>2. What is new in 3++</h2>
+                <ul>
+                    <li>One plugin contains both local-file and MySQL/MariaDB statistics backends, selected through configuration.</li>
+                    <li>Threaded SQL operations for player prefetch, rankings, statistics writes, streaks and match snapshots reduce synchronous work during gameplay. One synchronous connection call remains for charset-aware escaping.</li>
+                    <li>Player statistics caches use identity and generation checks to reject stale callbacks after disconnects or slot reuse.</li>
+                    <li>Deferred handicap handling coordinates late statistics results with player spawn state.</li>
+                    <li>SQL connection probes and reconnect handling support recovery from database failures without silently switching to local files.</li>
+                    <li>YaPB fake SteamID detection uses FakeMeta without a separate bridge module.</li>
+                    <li>UTF-8 database connections use utf8mb4; winner snapshots support optional history and timestamp-specific web results.</li>
+                    <li>New server diagnostics: gg_info, gg_status and category-specific debug controls.</li>
+                    <li>Companion PHP dashboard provides rankings, player profiles, latest match results and optional live server status.</li>
+                </ul>
+                <h3>Database architecture and reliability</h3>
+                <ul>
+                    <li>Threaded statistics, streak persistence, ranking prefetch and winner snapshots; player identity, UserID, slot and generation validation protect against stale callbacks.</li>
+                    <li>Asynchronous handicap ranking with deferred initialization, bounded retry and level-1 fallback; spawn finalization is separated from handicap processing.</li>
+                    <li>Staged SQL initialization: charset, statistics, streaks and winner MOTD. Player caches load after successful initialization.</li>
+                    <li>Asynchronous reachability probes and automatic reconnect scheduling at 15-second intervals; overlapping initialization and reconnect attempts are guarded.</li>
+                    <li>Central SQL error handling and charset-aware escaping; UTF-8 player names are refreshed even without a points increase, with timestamp protection.</li>
+                    <li>One synchronous SQL connection call remains for the escaping handle. This is not a guarantee of zero main-thread blocking.</li>
+                </ul>
+            </section>
+            <section id="install">
+                <h2>3. Requirements and installation</h2>
+                <p>Development targets: AMX Mod X 1.10, ReHLDS, ReGameDLL and YaPB. These are development targets, not a certified compatibility matrix. The source uses AMX Mod X, AMX Misc, FakeMeta, FakeMeta Utilities, CStrike, HamSandwich and SQLX includes. MySQL support is needed for the SQL backend; local-file mode does not require a working SQL connection.</p>
+                <ol>
+                    <li>Back up existing GunGame configuration and statistics, including SQL tables if applicable.</li>
+                    <li>Compile <code>addons/amxmodx/scripting/gungame.sma</code> locally with the AMX Mod X 1.10 compiler and matching standard includes (including SQLX). On Linux, run <code>./amxxpc gungame.sma -ogungame.amxx</code> from the scripting directory; on Windows, use <code>amxxpc.exe gungame.sma -ogungame.amxx</code>. Check for compilation errors. No compiled AMXX plugins are supplied.</li>
+                    <li>Install the compiled <code>gungame.amxx</code> in <code>addons/amxmodx/plugins/</code> and enable it in <code>addons/amxmodx/configs/plugins.ini</code> (avoid duplicate entries).</li>
+                    <li>Install the matching release configuration, dictionary <code>addons/amxmodx/data/lang/gungame.txt</code> and supplied sound assets in their intended locations.</li>
+                    <li>Configure <code>addons/amxmodx/configs/gungame.cfg</code> and, if used, <code>gungame_teamplay.cfg</code>.</li>
+                    <li>Restart the server and verify <code>amxx plugins</code>, <code>amxx modules</code> and <code>gg_info</code>.</li>
+                </ol>
+                <p>Do not assume that an existing database schema is automatically migrated. Test upgrades on a copy first.</p>
+                <h3 id="install-amxx">3.1 AMX Mod X preparation</h3>
+                <p>Install AMX Mod X with its Counter-Strike addon. Check the installed version using <code>amxx version</code> and check the CStrike module using <code>amxx modules</code>. The original 2.13 documentation required AMXX 1.80 or later; this is a historical requirement, not a verified minimum for 3++. Use the tested AMXX 1.10 environment for this release. See <a href="https://www.amxmodx.org/">AMX Mod X</a> for installation packages.</p>
+                <h3 id="install-files">3.2 Release files</h3>
+                <p>Extract the matching release into the game directory (<code>cstrike/</code> or <code>czero/</code>), preserving its directory structure. Enable the plugin in <code>addons/amxmodx/configs/plugins.ini</code>:</p>
+                <pre>; Custom plugins
+gungame.amxx</pre>
+                <p>Unlike 2.13, 3++ does not require separate SQL and flat-file archives. Select <code>gg_stats_backend 0</code> for local files or <code>gg_stats_backend 1</code> for SQL. See <a href="#sql">statistics setup</a> and <a href="#schema">SQL schema</a>.</p>
+                <h3 id="install-mapcycle">3.3 GunGame-specific map rotation</h3>
+                <p>The first existing file in this search order is selected:</p>
+                <ol>
+                    <li><code>addons/amxmodx/configs/gungame_mapcycle.cfg</code></li>
+                    <li><code>addons/amxmodx/configs/gungame_mapcycle.txt</code></li>
+                    <li><code>gungame_mapcycle.cfg</code> in the game directory</li>
+                    <li><code>gungame_mapcycle.txt</code> in the game directory</li>
+                </ol>
+                <p>Use one installed map per line. The rotation repeats from the beginning and takes precedence over GunGame map voting. Example:</p>
+                <pre>de_dust2
+de_inferno
+cs_office</pre>
+                <h3 id="install-mapconfigs">3.4 Per-map configuration</h3>
+                <p>Use AMXX map configuration files to override gameplay CVARs. Example: <code>addons/amxmodx/configs/maps/de_dust2.cfg</code>. Clear all alternative weapon sequences if a fixed sequence is required:</p>
+                <pre>gg_weapon_order "glock18,mp5navy,ak47,m4a1,knife"
+gg_weapon_order1 ""
+gg_weapon_order2 ""
+gg_weapon_order3 ""
+gg_weapon_order4 ""
+gg_weapon_order5 ""
+gg_weapon_order6 ""
+gg_weapon_order7 ""
+gg_weapon_order8 ""
+gg_weapon_order9 ""
+gg_weapon_order10 ""</pre>
+                <p>Keep baseline settings in <code>gungame.cfg</code>. The plugin searches the AMXX configuration directory before the game directory for both <code>gungame.cfg</code> and <code>gungame_teamplay.cfg</code>. Backend selection is locked for the map; do not treat it as a live gameplay override. Verify effective map settings after loading, particularly when using teamplay configuration or external configuration plugins.</p>
+                <h3 id="install-spawns">3.5 Random spawn locations and CSDM</h3>
+                <p>Place map-specific spawn files at <code>addons/amxmodx/configs/csdm/&lt;map&gt;.spawns.cfg</code>, for example <code>de_dust2.spawns.cfg</code>. Existing CSDM spawn packs can be used without loading CSDM itself. GunGame reads up to 128 spawn positions per map.</p>
+                <pre>gg_dm 1
+gg_dm_spawn_random 2</pre>
+                <p>Mode 0 disables random relocation; mode 1 uses custom spawn positions or ordinary map spawn entities when no custom file exists; mode 2 requires loaded custom spawn positions. If using external CSDM instead, set <code>gg_dm 0</code> and disable CSDM weapon selection (<code>csdm_equip.amxx</code>) to avoid competing weapon management.</p>
+                <p>CSDM is optional and its plugin list is shipped as <code>disabled-csdm.ini</code>. To use CSDM, obtain or compile its plugins, verify the matching module, rename the list to <code>plugins-csdm.ini</code>, disable <code>csdm_equip.amxx</code> and set <code>gg_dm 0</code> before restarting.</p>
+                <h3 id="install-check">3.6 Final checks</h3>
+                <p>Review the <a href="#reference">CVAR reference</a> and <a href="#faq">FAQ</a>, then verify plugin status, map rotation, weapon progression and statistics persistence. Source: <a href="https://gungame-amxx.org/installation.php">original installation guide</a>, adapted for 3++.</p>
+            </section>
+            <section id="config">
+                <h2>4. Gameplay configuration</h2>
+                <p>The following are selected CVARs and their compiled defaults. Release configuration files may override them.</p>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Setting / command</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>gg_enabled 1</code></td>
+                            <td>Enable GunGame.</td>
+                        </tr>
+                        <tr>
+                            <td><code>gg_weapon_order</code></td>
+                            <td>Comma-separated weapon sequence.</td>
+                        </tr>
+                        <tr>
+                            <td><code>gg_kills_per_lvl 2</code></td>
+                            <td>Required kills per level.</td>
+                        </tr>
+                        <tr>
+                            <td><code>gg_teamplay 0</code></td>
+                            <td>Enable shared team progression with 1.</td>
+                        </tr>
+                        <tr>
+                            <td><code>gg_dm 1</code></td>
+                            <td>Enable GunGame deathmatch respawning.</td>
+                        </tr>
+                        <tr>
+                            <td><code>gg_dm_spawn_delay 3.0</code></td>
+                            <td>Respawn delay in seconds.</td>
+                        </tr>
+                        <tr>
+                            <td><code>gg_dm_sp_time 1.0</code></td>
+                            <td>Spawn protection duration.</td>
+                        </tr>
+                        <tr>
+                            <td><code>gg_turbo 1</code></td>
+                            <td>Immediately provide the next level weapon.</td>
+                        </tr>
+                        <tr>
+                            <td><code>gg_knife_pro 1</code></td>
+                            <td>Enable knife-based level stealing.</td>
+                        </tr>
+                        <tr>
+                            <td><code>gg_handicap_on 1</code></td>
+                            <td>Enable joining-player handicap.</td>
+                        </tr>
+                        <tr>
+                            <td><code>gg_warmup_timer_setting 60</code></td>
+                            <td>Warmup duration in seconds.</td>
+                        </tr>
+                        <tr>
+                            <td><code>gg_map_iterations 1</code></td>
+                            <td>GunGame matches per map.</td>
+                        </tr>
+                        <tr>
+                            <td><code>gg_block_objectives 0</code></td>
+                            <td>Control blocking of map objectives.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+            <section id="players">
+                <h2>5. Player commands</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Setting / command</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>!help / !rules</code></td>
+                            <td>Show rules and console help.</td>
+                        </tr>
+                        <tr>
+                            <td><code>!weapons / !guns</code></td>
+                            <td>Show weapon progression menu.</td>
+                        </tr>
+                        <tr>
+                            <td><code>!top / !top10</code></td>
+                            <td>Open statistics ranking menu when available.</td>
+                        </tr>
+                        <tr>
+                            <td><code>!score / !scores</code></td>
+                            <td>Show current player scores.</td>
+                        </tr>
+                        <tr>
+                            <td><code>!level</code></td>
+                            <td>Show level and player statistics.</td>
+                        </tr>
+                        <tr>
+                            <td><code>!restart / !reset</code></td>
+                            <td>Request confirmation to reset your own progression.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+            <section id="admin">
+                <h2>6. Administration</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Setting / command</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>amx_gungame &lt;0|1&gt;</code></td>
+                            <td>Toggle GunGame (ADMIN_CVAR).</td>
+                        </tr>
+                        <tr>
+                            <td><code>amx_gungame_level &lt;target&gt; &lt;level&gt;</code></td>
+                            <td>Set absolute or relative level (ADMIN_BAN).</td>
+                        </tr>
+                        <tr>
+                            <td><code>amx_gungame_score &lt;target&gt; &lt;score&gt; [dont_refill]</code></td>
+                            <td>Set absolute or relative score (ADMIN_BAN).</td>
+                        </tr>
+                        <tr>
+                            <td><code>amx_gungame_vote [mode]</code></td>
+                            <td>Start a vote (ADMIN_VOTE).</td>
+                        </tr>
+                        <tr>
+                            <td><code>amx_gungame_win [target]</code></td>
+                            <td>Force a win; defaults to highest-level player (ADMIN_BAN).</td>
+                        </tr>
+                        <tr>
+                            <td><code>amx_gungame_teamplay &lt;0|1&gt; [killsperlvl] [suicidepenalty]</code></td>
+                            <td>Toggle teamplay (ADMIN_BAN).</td>
+                        </tr>
+                        <tr>
+                            <td><code>amx_gungame_restart [delay] [full]</code></td>
+                            <td>Restart GunGame; full reloads configuration (ADMIN_BAN).</td>
+                        </tr>
+                        <tr>
+                            <td><code>gg_reloadweapons</code></td>
+                            <td>Server command to reload weapon order and kills per level (registered with ADMIN_CVAR).</td>
+                        </tr>
+                        <tr>
+                            <td><code>gg_info</code></td>
+                            <td>Server console: version, edition and credits.</td>
+                        </tr>
+                        <tr>
+                            <td><code>gg_status</code></td>
+                            <td>Server console: read-only runtime snapshot; no SQL query.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+            <section id="sql">
+                <h2>7. Statistics and SQL</h2>
+                <p>Select the backend before initial map configuration. The selection is locked for the map. Restart or change map after changing it. Invalid backend values disable statistics; SQL failure does not trigger file fallback.</p>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Setting / command</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>gg_stats_backend 0</code></td>
+                            <td>0 = local files; 1 = MySQL/MariaDB.</td>
+                        </tr>
+                        <tr>
+                            <td><code>gg_stats_mode 2</code></td>
+                            <td>0 = disabled; 1 = wins; 2 = points.</td>
+                        </tr>
+                        <tr>
+                            <td><code>gg_stats_refresh_on_join 2</code></td>
+                            <td>0 = off; 1 = enabled; 2 = SQL backend only.</td>
+                        </tr>
+                        <tr>
+                            <td><code>gg_stats_file gungame.stats</code></td>
+                            <td>Local statistics filename.</td>
+                        </tr>
+                        <tr>
+                            <td><code>gg_stats_streak_file gungame.streaks</code></td>
+                            <td>Local streak filename.</td>
+                        </tr>
+                        <tr>
+                            <td><code>gg_stats_split 0</code></td>
+                            <td>Control separate solo/team statistics.</td>
+                        </tr>
+                        <tr>
+                            <td><code>gg_stats_prune 2592000</code></td>
+                            <td>Pruning age in seconds (30 days).</td>
+                        </tr>
+                        <tr>
+                            <td><code>gg_sql_host / user / pass / db</code></td>
+                            <td>GunGame-specific connection settings (full names start with gg_sql_).</td>
+                        </tr>
+                        <tr>
+                            <td><code>gg_sql_table gg_stats</code></td>
+                            <td>Player statistics table.</td>
+                        </tr>
+                        <tr>
+                            <td><code>gg_sql_streak_table gg_streaks</code></td>
+                            <td>Streak statistics table.</td>
+                        </tr>
+                        <tr>
+                            <td><code>gg_sql_winmotd_table gg_winmotd</code></td>
+                            <td>Match snapshot table.</td>
+                        </tr>
+                        <tr>
+                            <td><code>gg_winner_motd_history 0</code></td>
+                            <td>0 replaces server snapshots; nonzero retains history.</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p>SQL mode can use central AMXX SQL settings from <code>sql.cfg</code>. Use a dedicated database account with the permissions needed for initialization and statistics writes. Keep credentials private. The plugin creates missing tables; back up existing tables before upgrading.</p>
+            </section>
+            <section id="web">
+                <h2>8. Web statistics and winner MOTD</h2>
+                <p>The optional companion web application uses PHP and PDO MySQL to read the SQL tables. It provides solo/team rankings, search, server filters, player profiles, streak records and latest match results. Live server status is loaded independently when enabled.</p>
+                <ol>
+                    <li>Deploy the supplied web directory to a PHP-capable web server.</li>
+                    <li>Configure <code>config.php</code> from the supplied example, matching the database and table names. Use a read-only database account for the website.</li>
+                    <li>Configure your own site URL, timezone and optional game-server settings. Verify the dashboard and language files.</li>
+                    <li>For the web winner screen, set <code>gg_winner_motd</code> to the deployed MOTD URL (SQL backend required). Keep the URL within the source’s 63-character limit and do not append query parameters.</li>
+                </ol>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Setting / command</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>gg_winner_motd 0</code></td>
+                            <td>Disable winner screen.</td>
+                        </tr>
+                        <tr>
+                            <td><code>gg_winner_motd 1</code></td>
+                            <td>Use built-in winner screen (default).</td>
+                        </tr>
+                        <tr>
+                            <td><code>gg_winner_motd 2</code></td>
+                            <td>Store SQL snapshot without opening the external web page; built-in screen remains available.</td>
+                        </tr>
+                        <tr>
+                            <td><code>gg_winner_motd https://example.tld/motd.php</code></td>
+                            <td>Use the external winner screen after successful snapshot write.</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p>The plugin supplies server address, player slot, language and match timestamp to the web MOTD. History mode increases database storage; plan retention separately.</p>
+                <h3>Companion web release</h3>
+                <p>The web development changelog records the following features. Deploy the matching web package; the plugin alone does not install these components.</p>
+                <ul>
+                    <li>Responsive dashboard, top-three podium, profiles, solo/team rankings, search, sorting, pagination, server filtering and automatic language discovery (English and German).</li>
+                    <li>GameQ live monitoring: server name, address, game type, GunGame version, online status, human/bot counts and capacity. Cached queries and configurable refresh; no RCON credentials required.</li>
+                    <li>Map timeline: previous, current and next map, game-specific preview directories, fallback image and synchronized countdown where data is available. Previous-map information can use cached observations and match snapshots.</li>
+                    <li>Steam connection links and optional HLstatsX/PsychoStats links from validated server rules or per-server configuration.</li>
+                    <li>Configurable site title, URL and timezone (UTC default), canonical URLs, Open Graph and Twitter/X metadata, social preview and credits page. API and MOTD are excluded from indexing.</li>
+                    <li>Local assets, separated API, includes, vendor, languages and cache directories; third-party notices and license files. Map images with unclear redistribution rights are excluded from the public package.</li>
+                </ul>
+                <h3>Deployment safety</h3>
+                <p>Keep configuration credentials and cache files out of public release archives. Restrict HTTP access to sensitive configuration and cache paths. Use a read-only database account and configure the optional game-server allowlist where available. Validate outbound server queries and external links; do not expose RCON credentials.</p>
+            </section>
+            <section id="compat">
+                <h2>9. Compatibility and testing</h2>
+                <p>GunGame includes its own deathmatch implementation and recognizes the CSDM active CVAR in gameplay paths. When combining with CSDM, coordinate respawn and weapon-management settings to avoid conflicts. Test the actual plugin combination before production use.</p>
+                <p>YaPB fake SteamID handling observes <code>yb_enable_fake_steamids</code> and authentication events. Test bot identity and ranking behavior with your installed YaPB version.</p>
+                <p>Developers should use the supplied SMA and matching AMX Mod X includes. No new public native API is documented here. SQL callbacks and internal cache structures are implementation details.</p>
+                <h3>Development and runtime testing</h3>
+                <p>GunGame AMXX 3++ has undergone extensive development and runtime testing, including asynchronous SQL processing, statistics persistence, ranking and handicap handling, YaPB integration, UTF-8 support and database connection recovery. The development test environment included Counter-Strike 1.6, ReHLDS, AMX Mod X 1.10.0.5217, CSDM 2.1.3d, YaPB 4.8 and MariaDB.</p>
+                <p>Testing included map changes, warmup, player reconnects, slot reuse, simulated handicap failures, winner MOTD and web export. Database recovery was observed after connectivity was restored and a map change occurred. These results describe the accumulated development testing, not exhaustive validation of every configuration or failure scenario.</p>
+                <h3>Operational considerations</h3>
+                <p>One synchronous SQL connection call remains for charset-aware escaping. Match persistence is not fully transactional: interrupted writes may be partial and are not automatically replayed. Before upgrading an existing installation, back up configuration files and databases and verify the upgrade in a test environment.</p>
+            </section>
+            <section id="debug">
+                <h2>10. Troubleshooting</h2>
+                <p>Start with <code>amxx plugins</code>, <code>amxx modules</code>, <code>gg_info</code> and <code>gg_status</code>. The latter reports match iteration, backend, leading level and per-player identity, weapon, ranks, cache state, pending handicap and generation.</p>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Setting / command</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>gg_debug / gg_debug_sql</code></td>
+                            <td>General and SQL diagnostic levels.</td>
+                        </tr>
+                        <tr>
+                            <td><code>gg_debug_stats / gg_debug_ranking</code></td>
+                            <td>Statistics and ranking diagnostics.</td>
+                        </tr>
+                        <tr>
+                            <td><code>gg_debug_handicap / gg_debug_spawn</code></td>
+                            <td>Handicap and spawn diagnostics.</td>
+                        </tr>
+                        <tr>
+                            <td><code>gg_debug_motd / gg_debug_cache</code></td>
+                            <td>Winner screen and cache diagnostics.</td>
+                        </tr>
+                        <tr>
+                            <td><code>gg_debug_handicap_fault / gg_debug_handicap_delay</code></td>
+                            <td>Development fault/delay injection; leave at 0 in production.</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p>All debug CVARs default to 0. Enable diagnostics temporarily, inspect AMXX logs for <code>[GG-SQL-DEBUG]</code>, and restore defaults afterward. If rankings are missing, check backend selection, statistics mode, SQL module, credentials and table access.</p>
+                <h3>Runtime diagnostics</h3>
+                <p>Debug levels can be changed without recompiling or changing map: 0 disabled, 1 critical, 2 extended, 3 detailed, 4 full. The higher applicable global/category level controls output; levels 3 and 4 may have similar coverage. Regular errors remain logged. Category coverage varies.</p>
+                <p>Handicap fault injection: 0 disabled, 1 simulate failure of the first ranking callback, 2 simulate failure of both the first callback and retry. Delay injection artificially postpones the handicap decision, not the database query. Keep both controls at zero during normal operation.</p>
+                <pre>gg_debug 0
+gg_debug_sql 0
+gg_debug_stats 0
+gg_debug_ranking 0
+gg_debug_handicap 0
+gg_debug_spawn 0
+gg_debug_motd 0
+gg_debug_cache 0
+gg_debug_handicap_fault 0
+gg_debug_handicap_delay 0</pre>
+            </section>
+            <section id="credits">
+                <h2>11. Credits, license and resources</h2>
+                <p>Original GunGame AMXX 2.13c: Avalanche. Independent continuation: Pascal “JamesDaRock” Neumann (pur3gaming). Original contributors include 3volution, raa, BAILOPAN, VEN and SeNz0r. Thanks to the original community supporters and translators, and the AMX Mod X, Metamod, ReHLDS, ReGameDLL and YaPB communities.</p>
+                <p>Retain the original copyright notices and applicable license terms. Refer to the license files and third-party notices supplied with the release for binding terms.</p>
+                <p><a href="https://gungame-amxx.org/index.php">Original GunGame website</a> · <a href="https://github.com/JamesDaRock">Maintainer on GitHub</a> · <a href="https://www.amxmodx.org/">AMX Mod X</a> · <a href="https://www.bailopan.net/csdm/">CSDM</a></p>
+                <p>When reporting an issue, include the plugin version, server environment, relevant configuration (without credentials), reproduction steps and logs.</p>
+            </section>
+            <section id="reference">
+                <h2>12. Complete CVAR inventory</h2>
+                <p>Compiled defaults from the release SMA, not necessarily the values shipped in gungame.cfg. Boolean toggles use 0/1 unless noted. Legacy gameplay descriptions are concise guidance based on the original documentation; individual branches have not all been runtime tested. New controls and SQL layout are based on the current source. Empty means an empty string.</p>
+                <details open="">
+                    <summary><strong>General and gameplay</strong></summary>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>CVAR</th>
+                                <th>Compiled default</th>
+                                <th>Configuration</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>gg_version</code></td>
+                                <td><code>3.0.0-rc3</code></td>
+                                <td>Published plugin version; not an administrator setting.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_enabled</code></td>
+                                <td><code>1</code></td>
+                                <td>0 off; 1 on. Use amx_gungame during play.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_vote_setting</code></td>
+                                <td><code>2</code></td>
+                                <td>0 disables automatic map voting; 1 final level; 2 penultimate level; higher positive values trigger earlier. Requires positive gg_map_iterations, final map iteration, no warmup, and no existing GunGame mapcycle file.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_vote_custom</code></td>
+                                <td><code>""</code></td>
+                                <td>Custom vote command; empty uses supported map voting integration.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_changelevel_custom</code></td>
+                                <td><code>""</code></td>
+                                <td>Custom map-change command; empty uses amx_nextmap.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_map_setup</code></td>
+                                <td><code>mp_timelimit 45; mp_winlimit 0; sv_alltalk 0; mp_chattime 10; mp_c4timer 25</code></td>
+                                <td>Semicolon-separated startup/enable commands.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_endmap_setup</code></td>
+                                <td><code>""</code></td>
+                                <td>Commands for disable or map end.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_join_msg</code></td>
+                                <td><code>1</code></td>
+                                <td>Welcome message and sound toggle.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_messages</code></td>
+                                <td><code>1</code></td>
+                                <td>0 disables GunGame chat/HUD messages; 1 enables normal messages. Bit flags: 2 classic, 4 no color, 8 hide chat, 16 hide HUD. Combine flags by addition; adding 1 is not required.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_save_temp</code></td>
+                                <td><code>300</code></td>
+                                <td>Reconnect progression retention in seconds.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_status_display</code></td>
+                                <td><code>1</code></td>
+                                <td>0 disables the display; 1 leader weapon; 2 own weapon; 3 kills remaining; 4 kills completed. Other values are unsupported. Hidden during warmup.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_map_iterations</code></td>
+                                <td><code>1</code></td>
+                                <td>Matches per map; 0 prevents automatic map change.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_ignore_bots</code></td>
+                                <td><code>0</code></td>
+                                <td>0 normal; 1 exclude bot stats; 2 also prevent bot wins when humans are present.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_block_equips</code></td>
+                                <td><code>2</code></td>
+                                <td>0 allow; 1 block map equip entities; 2 also block weapon strips.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_leader_display</code></td>
+                                <td><code>1</code></td>
+                                <td>Persistent leader HUD toggle.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_leader_display_x</code></td>
+                                <td><code>-1.0</code></td>
+                                <td>Horizontal HUD coordinate 0–1; -1 centers.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_leader_display_y</code></td>
+                                <td><code>0.0</code></td>
+                                <td>Vertical HUD coordinate 0–1; -1 centers.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_allow_changeteam</code></td>
+                                <td><code>2</code></td>
+                                <td>0 penalize; 1 exempt team switches; 2 exempt balancing switches.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_disable_money</code></td>
+                                <td><code>1</code></td>
+                                <td>Remove money; disabling requires alternative buy restrictions.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_winner_motd</code></td>
+                                <td><code>1</code></td>
+                                <td>0 off; 1 built-in; 2 SQL snapshot; URL external screen (SQL).</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_winner_motd_history</code> <small>3++</small></td>
+                                <td><code>0</code></td>
+                                <td>0 delete previous snapshots for this server before insert; nonzero retain history. Only applies when snapshots are written.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_afk_protection</code></td>
+                                <td><code>0</code></td>
+                                <td>0 off; 1 movement/look/fire detection; 2 legacy stricter detection.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_top10_ppp</code></td>
+                                <td><code>8</code></td>
+                                <td>Ranking entries per page or external URL (i and l parameters).</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_block_objectives</code></td>
+                                <td><code>0</code></td>
+                                <td>Remove bomb/hostage objectives.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_bomb_defuse_lvl</code></td>
+                                <td><code>1</code></td>
+                                <td>0 off; 1 plant/defuse reward; 2 require explosion for terrorist reward.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_host_touch_reward</code></td>
+                                <td><code>2</code></td>
+                                <td>Unique hostages touched per score reward; 0 off.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_host_rescue_reward</code></td>
+                                <td><code>2</code></td>
+                                <td>Hostages rescued per level reward; 0 off.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_host_kill_reward</code></td>
+                                <td><code>1</code></td>
+                                <td>Extra score for killing a hostage escort; 0 off; not supported in CZ in legacy behavior.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_host_kill_penalty</code></td>
+                                <td><code>1</code></td>
+                                <td>Score deducted for killing hostage.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_ff_auto</code></td>
+                                <td><code>1</code></td>
+                                <td>Automatic friendly fire on grenade/knife stages.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_max_lvl</code></td>
+                                <td><code>3</code></td>
+                                <td>Per-round level cap; 0 unlimited; turbo overrides.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_triple_on</code></td>
+                                <td><code>0</code></td>
+                                <td>0 off; 1 triple-level bonus; 2 allow with turbo.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_turbo</code></td>
+                                <td><code>1</code></td>
+                                <td>Give next weapon immediately.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_knife_pro</code></td>
+                                <td><code>1</code></td>
+                                <td>0 off; 1 steal level; 2 gain without victim loss; 3 gain score and victim loses level.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_knife_elite</code></td>
+                                <td><code>0</code></td>
+                                <td>Force knife after leveling until death or next round.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_suicide_penalty</code></td>
+                                <td><code>1</code></td>
+                                <td>Level penalty for suicide; consider 0 for teamplay.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_worldspawn_suicide</code></td>
+                                <td><code>1</code></td>
+                                <td>Count world deaths as suicide.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_pickup_others</code></td>
+                                <td><code>0</code></td>
+                                <td>Allow other weapons; progression still requires level weapon.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_handicap_on</code></td>
+                                <td><code>1</code></td>
+                                <td>0 off; 1 average level; 2 lowest eligible level. Applies only to solo mode, outside warmup. Top-ten eligibility is controlled separately.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_top10_handicap</code></td>
+                                <td><code>1</code></td>
+                                <td>Allow top-ten players to receive handicap.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_warmup_timer_setting</code></td>
+                                <td><code>60</code></td>
+                                <td>Warmup seconds; 0 off.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_warmup_weapon</code></td>
+                                <td><code>knife</code></td>
+                                <td>Weapon during warmup; empty disables restriction.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_warmup_multi</code></td>
+                                <td><code>0</code></td>
+                                <td>Warmup on each map iteration.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_nade_glock</code></td>
+                                <td><code>1</code></td>
+                                <td>Give Glock on grenade level.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_nade_smoke</code></td>
+                                <td><code>0</code></td>
+                                <td>Give smoke on grenade level.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_nade_flash</code></td>
+                                <td><code>0</code></td>
+                                <td>Give flash on grenade level.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_extra_nades</code></td>
+                                <td><code>1</code></td>
+                                <td>Replenish HE after kills on grenade level.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_nade_refresh</code></td>
+                                <td><code>5.0</code></td>
+                                <td>HE replenishment interval in seconds; 0 off.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_kills_per_lvl</code></td>
+                                <td><code>2</code></td>
+                                <td>Default kill goal; grenade/knife normally 1 unless overridden.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_kills_botmod</code></td>
+                                <td><code>1.0</code></td>
+                                <td>Bot kill-goal multiplier; not teamplay.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_give_armor</code></td>
+                                <td><code>100</code></td>
+                                <td>Armor amount.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_give_helmet</code></td>
+                                <td><code>1</code></td>
+                                <td>Helmet toggle.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_ammo_amount</code></td>
+                                <td><code>200</code></td>
+                                <td>Reserve ammunition; -1 weapon default.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_refill_on_kill</code></td>
+                                <td><code>1</code></td>
+                                <td>Refill ammunition and armor on kill.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_tk_penalty</code></td>
+                                <td><code>1</code></td>
+                                <td>Teamkill score penalty; 0 none; -1 count as normal kill.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_awp_oneshot</code></td>
+                                <td><code>1</code></td>
+                                <td>Limit AWP clip to one round.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_bots_skipnade</code></td>
+                                <td><code>0</code></td>
+                                <td>Bots skip grenade level; not teamplay.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_bots_knifeable</code></td>
+                                <td><code>1</code></td>
+                                <td>Allow humans to progress/steal levels by knifing bots.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </details>
+                <details open="">
+                    <summary><strong>Diagnostics</strong></summary>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>CVAR</th>
+                                <th>Compiled default</th>
+                                <th>Configuration</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>gg_debug</code> <small>3++</small></td>
+                                <td><code>0</code></td>
+                                <td>Global diagnostic threshold.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_debug_sql</code> <small>3++</small></td>
+                                <td><code>0</code></td>
+                                <td>SQL diagnostic threshold; also enables other categories via shared helper.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_debug_stats</code> <small>3++</small></td>
+                                <td><code>0</code></td>
+                                <td>Statistics diagnostics.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_debug_ranking</code> <small>3++</small></td>
+                                <td><code>0</code></td>
+                                <td>Ranking diagnostics.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_debug_handicap</code> <small>3++</small></td>
+                                <td><code>0</code></td>
+                                <td>Handicap diagnostics.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_debug_handicap_fault</code> <small>3++</small></td>
+                                <td><code>0</code></td>
+                                <td>TEST ONLY: 0 off; 1 simulate initial failure; 2 simulate initial and retry failure.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_debug_handicap_delay</code> <small>3++</small></td>
+                                <td><code>0</code></td>
+                                <td>TEST ONLY: delay handicap decision in seconds, capped at 30; 0 off.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_debug_spawn</code> <small>3++</small></td>
+                                <td><code>0</code></td>
+                                <td>Spawn diagnostics.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_debug_motd</code> <small>3++</small></td>
+                                <td><code>0</code></td>
+                                <td>MOTD diagnostics.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_debug_cache</code> <small>3++</small></td>
+                                <td><code>0</code></td>
+                                <td>Cache diagnostics.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </details>
+                <details open="">
+                    <summary><strong>Voting</strong></summary>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>CVAR</th>
+                                <th>Compiled default</th>
+                                <th>Configuration</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>gg_autovote_mode</code></td>
+                                <td><code>0</code></td>
+                                <td>0 off; 1 on/off; 2 team/solo; 3 team/solo/off; comma-separated sequence supported.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_autovote_rounds</code></td>
+                                <td><code>1</code></td>
+                                <td>Rounds before automatic vote.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_autovote_delay</code></td>
+                                <td><code>8.0</code></td>
+                                <td>Seconds after triggering round starts.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_autovote_ratio</code></td>
+                                <td><code>0.51</code></td>
+                                <td>Required vote fraction (0–1).</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_autovote_time</code></td>
+                                <td><code>10.0</code></td>
+                                <td>Voting duration in seconds.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </details>
+                <details open="">
+                    <summary><strong>Statistics</strong></summary>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>CVAR</th>
+                                <th>Compiled default</th>
+                                <th>Configuration</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>gg_stats_backend</code> <small>3++</small></td>
+                                <td><code>0</code></td>
+                                <td>0 files; 1 MySQL; other values disable statistics for map. Change on next map/restart.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_stats_refresh_on_join</code> <small>3++</small></td>
+                                <td><code>2</code></td>
+                                <td>0 never; 1 both backends; 2 SQL only.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_stats_file</code></td>
+                                <td><code>gungame.stats</code></td>
+                                <td>Local statistics filename relative to game directory; empty disables file logging.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_stats_streak_file</code></td>
+                                <td><code>gungame.streaks</code></td>
+                                <td>Local streak filename.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_stats_ip</code></td>
+                                <td><code>0</code></td>
+                                <td>0 Steam/auth ID (including supported YaPB fake IDs); 1 IP address; 2 or -1 player name. Changing identity mode changes statistics keys; back up before switching.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_stats_prune</code></td>
+                                <td><code>2592000</code></td>
+                                <td>Maximum record age in seconds; 0 disables pruning.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_stats_mode</code></td>
+                                <td><code>2</code></td>
+                                <td>0 disabled; 1 wins; 2 points.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_stats_split</code></td>
+                                <td><code>0</code></td>
+                                <td>0 combined; 1 separate solo/team statistics.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_stats_winbonus</code></td>
+                                <td><code>1.5</code></td>
+                                <td>Winner points multiplier in points mode.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </details>
+                <details open="">
+                    <summary><strong>Deathmatch</strong></summary>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>CVAR</th>
+                                <th>Compiled default</th>
+                                <th>Configuration</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>gg_dm</code></td>
+                                <td><code>1</code></td>
+                                <td>Built-in respawn toggle.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_dm_sp_time</code></td>
+                                <td><code>1.0</code></td>
+                                <td>Protection seconds; 0 disables.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_dm_sp_mode</code></td>
+                                <td><code>1</code></td>
+                                <td>0 off; 1 no kill credit during protection; 2 invulnerability.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_dm_spawn_random</code></td>
+                                <td><code>2</code></td>
+                                <td>0 normal; 1 random; 2 random only with CSDM spawn data.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_dm_start_random</code></td>
+                                <td><code>1</code></td>
+                                <td>Random round-start placement when enough CSDM spawns exist.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_dm_spawn_delay</code></td>
+                                <td><code>3.0</code></td>
+                                <td>Respawn delay in seconds.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_dm_spawn_afterplant</code></td>
+                                <td><code>1</code></td>
+                                <td>Permit respawn after bomb plant.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_dm_corpses</code></td>
+                                <td><code>1</code></td>
+                                <td>Retain corpses in deathmatch.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_dm_countdown</code></td>
+                                <td><code>2</code></td>
+                                <td>0 off; 1 center text; 2 HUD; 3 both.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </details>
+                <details open="">
+                    <summary><strong>Teamplay</strong></summary>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>CVAR</th>
+                                <th>Compiled default</th>
+                                <th>Configuration</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>gg_teamplay</code></td>
+                                <td><code>0</code></td>
+                                <td>0 solo; 1 team; 2 random; comma-separated sequence supported.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_teamplay_knife_mod</code></td>
+                                <td><code>0.33</code></td>
+                                <td>Team knife kill-goal multiplier.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_teamplay_nade_mod</code></td>
+                                <td><code>0.50</code></td>
+                                <td>Team grenade kill-goal multiplier.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_teamplay_timeratio</code></td>
+                                <td><code>1</code></td>
+                                <td>Weight team rewards by time played; winning-team time threshold applies.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </details>
+                <details open="">
+                    <summary><strong>Weapon progression</strong></summary>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>CVAR</th>
+                                <th>Compiled default</th>
+                                <th>Configuration</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>gg_weapon_order</code></td>
+                                <td><code>glock18,usp,p228,deagle,fiveseven,elite,m3,xm1014,tmp,mac10,mp5navy,ump45,p90,galil,famas,ak47,scout,m4a1,sg552,aug,m249,hegrenade,knife</code></td>
+                                <td>Comma-separated weapons; append :N for custom kill goal, e.g. deagle:5.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_weapon_order1</code></td>
+                                <td><code>""</code></td>
+                                <td>Alternative weapon sequence; fill consecutively from 1. First empty entry ends the list.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_weapon_order2</code></td>
+                                <td><code>""</code></td>
+                                <td>Alternative weapon sequence; fill consecutively from 1. First empty entry ends the list.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_weapon_order3</code></td>
+                                <td><code>""</code></td>
+                                <td>Alternative weapon sequence; fill consecutively from 1. First empty entry ends the list.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_weapon_order4</code></td>
+                                <td><code>""</code></td>
+                                <td>Alternative weapon sequence; fill consecutively from 1. First empty entry ends the list.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_weapon_order5</code></td>
+                                <td><code>""</code></td>
+                                <td>Alternative weapon sequence; fill consecutively from 1. First empty entry ends the list.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_weapon_order6</code></td>
+                                <td><code>""</code></td>
+                                <td>Alternative weapon sequence; fill consecutively from 1. First empty entry ends the list.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_weapon_order7</code></td>
+                                <td><code>""</code></td>
+                                <td>Alternative weapon sequence; fill consecutively from 1. First empty entry ends the list.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_weapon_order8</code></td>
+                                <td><code>""</code></td>
+                                <td>Alternative weapon sequence; fill consecutively from 1. First empty entry ends the list.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_weapon_order9</code></td>
+                                <td><code>""</code></td>
+                                <td>Alternative weapon sequence; fill consecutively from 1. First empty entry ends the list.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_weapon_order10</code></td>
+                                <td><code>""</code></td>
+                                <td>Alternative weapon sequence; fill consecutively from 1. First empty entry ends the list.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </details>
+                <details open="">
+                    <summary><strong>SQL connection</strong></summary>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>CVAR</th>
+                                <th>Compiled default</th>
+                                <th>Configuration</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>gg_sql_host</code></td>
+                                <td><code>""</code></td>
+                                <td>Database host; see connection rules below.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_sql_user</code></td>
+                                <td><code>""</code></td>
+                                <td>Database account.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_sql_pass</code></td>
+                                <td><code>""</code></td>
+                                <td>Database password; keep private.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_sql_db</code></td>
+                                <td><code>""</code></td>
+                                <td>Database name (must exist).</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_sql_table</code></td>
+                                <td><code>gg_stats</code></td>
+                                <td>Player statistics table.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_sql_streak_table</code></td>
+                                <td><code>gg_streaks</code></td>
+                                <td>Streak table.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_sql_winmotd_table</code></td>
+                                <td><code>gg_winmotd</code></td>
+                                <td>Match snapshot table.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </details>
+                <details open="">
+                    <summary><strong>Audio</strong></summary>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>CVAR</th>
+                                <th>Compiled default</th>
+                                <th>Configuration</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>gg_sound_levelup</code></td>
+                                <td><code>sound/gungame/gg_levelup.wav</code></td>
+                                <td>Level gain sound.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_sound_leveldown</code></td>
+                                <td><code>sound/ambience/xtal_down1(e70)</code></td>
+                                <td>Level loss sound.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_sound_levelsteal</code></td>
+                                <td><code>sound/turret/tu_die.wav</code></td>
+                                <td>Knife steal sound.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_sound_nade</code></td>
+                                <td><code>sound/gungame/gg_nade_level.wav</code></td>
+                                <td>Grenade-level announcement.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_sound_knife</code></td>
+                                <td><code>sound/gungame/gg_knife_level.wav</code></td>
+                                <td>Knife-level announcement.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_sound_welcome</code></td>
+                                <td><code>sound/gungame/gg_welcome.wav</code></td>
+                                <td>Join sound.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_sound_triple</code></td>
+                                <td><code>sound/gungame/gg_triple.wav</code></td>
+                                <td>Triple-level bonus sound; WAV, 10 seconds.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_sound_winner</code></td>
+                                <td><code>media/Half-Life03.mp3;media/Half-Life08.mp3;media/Half-Life11.mp3;media/Half-Life17.mp3</code></td>
+                                <td>Winner sound; semicolon-separated choices.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_sound_takenlead</code></td>
+                                <td><code>sound/gungame/gg_takenlead.wav</code></td>
+                                <td>Lead gained sound.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_sound_tiedlead</code></td>
+                                <td><code>sound/gungame/gg_tiedlead.wav</code></td>
+                                <td>Lead tied sound.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_sound_lostlead</code></td>
+                                <td><code>sound/gungame/gg_lostlead.wav</code></td>
+                                <td>Lead lost sound.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_lead_sounds</code></td>
+                                <td><code>0.9</code></td>
+                                <td>Lead announcement control; 0 disables; positive value passed to lead sound routine.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </details>
+            </section>
+            <section id="schema">
+                <h2>13. SQL setup and schema reference</h2>
+                <p>Use a dedicated MySQL/MariaDB database and account. Create the database first. Grant the game account SELECT, INSERT, UPDATE, DELETE and CREATE on that database; review any additional permissions against the actual deployment. The web account needs SELECT only. Never publish credentials. Restrict network access to the game and web hosts.</p>
+                <h3>Connection examples</h3>
+                <pre>gg_stats_backend 1
+gg_stats_mode 2
+gg_sql_host ""
+gg_sql_user ""
+gg_sql_pass ""
+gg_sql_db ""</pre>
+                <p>All four empty fields select central AMXX sql.cfg. Any nonempty field selects custom configuration; host, user and database must then be supplied. No per-field fallback. MySQL affinity is forced regardless of amx_sql_type.</p>
+                <pre>gg_sql_host "db.example.tld"
+gg_sql_user "gungame"
+gg_sql_pass "REPLACE_WITH_SECRET"
+gg_sql_db "gungame"</pre>
+                <p>Restart or change map after backend changes. Check gg_info, gg_status and AMXX logs. Do not enable fault injection on production.</p>
+                <h3>gg_stats</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Column</th>
+                            <th>SQL type</th>
+                            <th>Meaning</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>authid</code></td>
+                            <td>VARCHAR(31)</td>
+                            <td>Identity</td>
+                        </tr>
+                        <tr>
+                            <td><code>wins</code></td>
+                            <td>SMALLINT(6)</td>
+                            <td>Wins</td>
+                        </tr>
+                        <tr>
+                            <td><code>name</code></td>
+                            <td>VARCHAR(31)</td>
+                            <td>Latest stored name</td>
+                        </tr>
+                        <tr>
+                            <td><code>timestamp</code></td>
+                            <td>INT(10) UNSIGNED</td>
+                            <td>Unix timestamp</td>
+                        </tr>
+                        <tr>
+                            <td><code>points</code></td>
+                            <td>MEDIUMINT(9)</td>
+                            <td>Points</td>
+                        </tr>
+                        <tr>
+                            <td><code>streak</code></td>
+                            <td>SMALLINT(6)</td>
+                            <td>Record streak</td>
+                        </tr>
+                        <tr>
+                            <td><code>wins_tp</code></td>
+                            <td>SMALLINT(6)</td>
+                            <td>Team wins</td>
+                        </tr>
+                        <tr>
+                            <td><code>points_tp</code></td>
+                            <td>MEDIUMINT(9)</td>
+                            <td>Team points</td>
+                        </tr>
+                        <tr>
+                            <td><code>streak_tp</code></td>
+                            <td>SMALLINT(6)</td>
+                            <td>Team record streak</td>
+                        </tr>
+                        <tr>
+                            <td><code>serverip</code></td>
+                            <td>VARCHAR(63)</td>
+                            <td>Server address</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <h3>gg_streaks</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Column</th>
+                            <th>SQL type</th>
+                            <th>Meaning</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>type</code></td>
+                            <td>ENUM('0C','0R','1C','1R')</td>
+                            <td>0C/0R combined or solo current/record; 1C/1R team current/record</td>
+                        </tr>
+                        <tr>
+                            <td><code>authid</code></td>
+                            <td>VARCHAR(31)</td>
+                            <td>Identity</td>
+                        </tr>
+                        <tr>
+                            <td><code>streak</code></td>
+                            <td>SMALLINT(6)</td>
+                            <td>Streak length</td>
+                        </tr>
+                        <tr>
+                            <td><code>name</code></td>
+                            <td>VARCHAR(31)</td>
+                            <td>Player name</td>
+                        </tr>
+                        <tr>
+                            <td><code>timestamp</code></td>
+                            <td>INT(10) UNSIGNED</td>
+                            <td>Unix timestamp</td>
+                        </tr>
+                        <tr>
+                            <td><code>serverip</code></td>
+                            <td>VARCHAR(63)</td>
+                            <td>Server address</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <h3>gg_winmotd</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Column</th>
+                            <th>SQL type</th>
+                            <th>Meaning</th>
+                            <th>Metadata (id = 0)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>id</code></td>
+                            <td>tinyint(4)</td>
+                            <td>Player slot 1–32</td>
+                            <td>0 (metadata row)</td>
+                        </tr>
+                        <tr>
+                            <td><code>authid</code></td>
+                            <td>varchar(31)</td>
+                            <td>Statistics identity</td>
+                            <td>Played map</td>
+                        </tr>
+                        <tr>
+                            <td><code>name</code></td>
+                            <td>varchar(31)</td>
+                            <td>Player name</td>
+                            <td>Next map</td>
+                        </tr>
+                        <tr>
+                            <td><code>team</code></td>
+                            <td>tinyint(4)</td>
+                            <td>Team</td>
+                            <td>Statistics mode</td>
+                        </tr>
+                        <tr>
+                            <td><code>level</code></td>
+                            <td>tinyint(4)</td>
+                            <td>Level</td>
+                            <td>Split mode</td>
+                        </tr>
+                        <tr>
+                            <td><code>weapon</code></td>
+                            <td>varchar(23)</td>
+                            <td>Level weapon</td>
+                            <td>Duration in seconds</td>
+                        </tr>
+                        <tr>
+                            <td><code>flags</code></td>
+                            <td>tinyint(4)</td>
+                            <td>Bit flags: 1 winning team, 2 losing team, 4 final kill/victim, 8 new record</td>
+                            <td>Teamplay mode</td>
+                        </tr>
+                        <tr>
+                            <td><code>wins</code></td>
+                            <td>smallint(6)</td>
+                            <td>Total wins</td>
+                            <td>Team time ratio</td>
+                        </tr>
+                        <tr>
+                            <td><code>points</code></td>
+                            <td>mediumint(9)</td>
+                            <td>Total points</td>
+                            <td>Winner slot</td>
+                        </tr>
+                        <tr>
+                            <td><code>new_points</code></td>
+                            <td>mediumint(9)</td>
+                            <td>Points earned in match</td>
+                            <td>Final victim slot</td>
+                        </tr>
+                        <tr>
+                            <td><code>record_streak</code></td>
+                            <td>smallint(6)</td>
+                            <td>Record streak</td>
+                            <td>Victim disconnected flag</td>
+                        </tr>
+                        <tr>
+                            <td><code>current_streak</code></td>
+                            <td>smallint(6)</td>
+                            <td>Current streak</td>
+                            <td>Winning team</td>
+                        </tr>
+                        <tr>
+                            <td><code>stats_position</code></td>
+                            <td>smallint(6) unsigned</td>
+                            <td>Rank; 0 unranked</td>
+                            <td>Losing team</td>
+                        </tr>
+                        <tr>
+                            <td><code>teamtime_winning</code></td>
+                            <td>smallint(6) unsigned</td>
+                            <td>Seconds on winning team</td>
+                            <td>Map iterations</td>
+                        </tr>
+                        <tr>
+                            <td><code>teamtime_losing</code></td>
+                            <td>smallint(6) unsigned</td>
+                            <td>Seconds on losing team</td>
+                            <td>Matches remaining</td>
+                        </tr>
+                        <tr>
+                            <td><code>timestamp</code></td>
+                            <td>int(10) unsigned</td>
+                            <td>Match end Unix timestamp</td>
+                            <td>Match end Unix timestamp</td>
+                        </tr>
+                        <tr>
+                            <td><code>serverip</code></td>
+                            <td>varchar(63)</td>
+                            <td>Server address</td>
+                            <td>Server address</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p>Keys: gg_stats uses (authid, serverip); gg_winmotd uses (serverip, timestamp, id). gg_streaks indexes identity/server and type. Unlike the legacy SQL page, points means total points and new_points means newly earned points in the current snapshot. Metadata authid and weapon now carry map and duration.</p>
+                <h3>Snapshot and history</h3>
+                <p>Use gg_winner_motd 2 for SQL snapshots or a short external MOTD URL. The external request includes s (server), i (slot), l (language), t (timestamp). History 0 deletes older snapshots for the server before inserting; history 1 retains them. Do not assume history is automatically pruned. Keep backups and plan retention. The timestamp key has second precision.</p>
+                <h3>Upgrade checklist</h3>
+                <p>Back up all tables and configuration. Compare SHOW CREATE TABLE output with the new schema, especially the snapshot primary key and unsigned columns. CREATE TABLE IF NOT EXISTS does not itself migrate an existing table. Test on a separate database before changing production. Do not import legacy rows blindly: verify point semantics, metadata and identity mode. No automatic migration procedure is certified here.</p>
+                <h3>Diagnostic levels</h3>
+                <p>The shared helper enables a message when gg_debug, gg_debug_sql or its category meets the requested threshold. Levels 2 and 3 occur in the source; 0 is the production default. Fault and delay injection are separate test controls and must remain zero in production.</p>
+                <p>References: Original GunGame AMXX <a href="https://gungame-amxx.org/cvars.php">CVAR reference</a> and <a href="https://gungame-amxx.org/sql_info.php">SQL reference</a>. This documentation has been revised for GunGame AMXX 3++ (3.0.0-rc3). Back up configuration and databases and verify upgrades in a test environment.</p>
+                <h3>Exact table creation statements</h3>
+                <pre>CREATE TABLE IF NOT EXISTS `gg_stats`(`authid` VARCHAR(31) NOT NULL,
+  `wins` SMALLINT(6) default '0',
+  `name` VARCHAR(31) NOT NULL,
+  `timestamp` INT(10) UNSIGNED default '0',
+  `points` MEDIUMINT(9) default '0',
+  `streak` SMALLINT(6) default '0',
+  `wins_tp` SMALLINT(6) default '0',
+  `points_tp` MEDIUMINT(9) default '0',
+  `streak_tp` SMALLINT(6) default '0',
+  `serverip` VARCHAR(63) NOT NULL,
+  PRIMARY KEY(`authid`,
+  `serverip`),
+  INDEX(`wins`),
+  INDEX(`points`),
+  INDEX(`wins_tp`), INDEX(`points_tp`));</pre>
+                <pre>CREATE TABLE IF NOT EXISTS `gg_streaks`(`type` ENUM('0C','0R','1C','1R') default NULL,
+  `authid` VARCHAR(31) NOT NULL,
+  `streak` SMALLINT(6) default '0',
+  `name` VARCHAR(31) NOT NULL,
+  `timestamp` INT(10) UNSIGNED default '0',
+  `serverip` VARCHAR(63) NOT NULL,
+  INDEX(`authid`,
+  `serverip`),
+  INDEX(`type`));</pre>
+                <pre>CREATE TABLE IF NOT EXISTS `gg_winmotd`(`id` tinyint(4) NOT NULL default '0',
+  `authid` varchar(31) NOT NULL,
+  `name` varchar(31) NOT NULL,
+  `team` tinyint(4) default '0',
+  `level` tinyint(4) default '0',
+  `weapon` varchar(23) NOT NULL,
+  `flags` tinyint(4) default '0',
+  `wins` smallint(6) default '0',
+  `points` mediumint(9) default '0',
+  `new_points` mediumint(9) default '0',
+  `record_streak` smallint(6) default '0',
+  `current_streak` smallint(6) default '0',
+  `stats_position` smallint(6) unsigned default '0',
+  `teamtime_winning` smallint(6) unsigned default '0',
+  `teamtime_losing` smallint(6) unsigned default '0',
+  `timestamp` int(10) unsigned default '0',
+  `serverip` varchar(63) NOT NULL, PRIMARY KEY(`serverip`,
+  `timestamp`,
+  `id`));</pre>
+            </section>
+            <section id="legacy">
+                <h2>14. Historical documentation archive</h2>
+                <p>Original GunGame AMXX documentation by Avalanche. Historical settings may differ from 3++; use the current sections for configuration. The following insertion areas are reserved for the original documentation supplied by the maintainer.</p>
+                <h3 id="legacy-cvars">14.1 Original CVAR reference</h3>
+                <p>Source: <a href="https://gungame-amxx.org/cvars.php">Original CVAR reference</a>.</p>
+                <!-- BEGIN LEGACY CVAR CONTENT-->
+                <details>
+                    <summary><strong>General and gameplay</strong></summary>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>CVAR</th>
+                                <th>Version</th>
+                                <th>Configuration</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>gg_enabled (default: 1)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Enables the functionality of the plugin. Use the <i>amx_gungame</i> command if you want to change this during gameplay.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_vote_setting (default: 2)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Starts a map vote when a player nears the final level. Every number above 1 is how many levels BEFORE the final level to start the vote at (e.g. <i>1</i> = start vote at final level, <i>2</i> = start vote one level before final, etcetera). Overridden by a <i>gungame_mapcycle.txt</i> file.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_vote_custom (default is blank)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The custom command used to start a map vote. Leave blank to use the functionality of <i>galileo.axmxx</i>, <i>mapchooser.amxx</i>, <i>mapchooser4.amxx</i>, <i>deagsmapmanage230b.amxx</i>, or <i>deagsmapmanager.amxx</i>. Overridden by a <i>gungame_mapcycle.txt</i> file.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_changelevel_custom (default is blank)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The custom command used to go to the next map. Leave blank to change to the map contained in <i>amx_nextmap</i>. Overridden by a <i>gungame_mapcycle.txt</i> file.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_map_setup (default: mp_timelimit 45; mp_winlimit 0; sv_alltalk 0; mp_chattime 10; mp_c4timer 25)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>A list of commands that are ran on map startup when GunGame is enabled, or when enabled in the middle of a game.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_endmap_setup (default is blank)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>A list of commands that are ran on map startup when GunGame is disabled, whenever GunGame disabled in the middle of a game, and at the end of a map. This is essentially the counter for <i>gg_map_setup</i>.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_join_msg (default: 1)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Give players a welcome sound and popup explaining GunGame when they join.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_messages (default: 1)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Set to 0 to disable all GunGame messages. There are four flags you can specify: classic (<i>2</i>), which displays the old-school GunGame chat message telling you your level; no color (<i>4</i>), which turns off coloring of GunGame chat messages; hide text (<i>8</i>), which suppresses all GunGame chat messages; and hide HUD (<i>16</i>), which suppresses all GunGame HUD messages. To use the flags, add up the numbers of the flags you want to use, and set <i>gg_messages</i> to that number plus 1.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_save_temp (default: 300)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Remembers a player's level and score upon disconnect for this amount of time (in seconds), so that they can rejoin shortly and not have to start over.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_status_display (default: 1)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Controls what the custom status display to the right of the round timer shows. <i>1</i> = leader's weapon, <i>2</i> = your weapon, <i>3</i> = kills until next level, <i>4</i> = kills gained this level, <i>30</i> = disabled</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_map_iterations (default: 1)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>How many GunGame rounds to play before switching maps. A value of <i>0</i> means that GunGame will never change maps on its own.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_ignore_bots (default: 0)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>If set to <i>1</i>, bot wins and points are not saved. If set to <i>2</i>, bots can't even trigger a win, unless there are no human players in the server, in addition to their wins and points not being saved.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_block_equips (default: 2)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>If set to <i>1</i>, stops <i>game_player_equip</i>'s from working, and if set to <i>2</i>, additionally stops <i>player_weaponstrip</i>'s from working.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_leader_display (default: 1)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Toggles the displaying of a constant leader display at the top of the screen in the format "Leader: Player +ties (lvlnum - lvlname)". "Ties" is the number of other players on the same level.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_leader_display_x (default: -1.0)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The X (horizontal) position of the aforementioned leader display. <i>0.0</i> is the left side of the screen, <i>1.0</i> is the right side of the screen, and <i>-1.0</i> is in the center.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_leader_display_y (default: 0.0)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The Y (vertical) position of the aforementioned leader display. <i>0.0</i> is the top of the screen, <i>1.0</i> is the bottom of the screen, and <i>-1.0</i> is in the center.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_allow_changeteam (default: 2)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>If set to <i>1</i>, team changes are not counted as a suicide. If set to <i>2</i>, team changes are not counted as a suicide <i>only if the change was beneficial</i>, meaning that the team change didn't stack the teams. Changing teams to your current team always counts as a suicide.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_disable_money (default: 1)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Controls whether GunGame gets rid of players' money. Only turn this off if you have another method to prevent weapon buying.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_winner_motd (default: 1)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Whether the win screen MOTD appears when someone wins (<i>0</i> to disable). Setting this to a URL will open a MOTD window using that URL instead (to be used with SQL stats primarily). The requested URL will include the query parameters <i>i=PLAYER_ID</i> and <i>l=PLAYER_LANG</i>, where <i>PLAYER_ID</i> is the individual player's unique in-game ID (<i>1</i>-<i>32</i>) and <i>PLAYER_LANG</i> is the player's two-digit language code (e.g. <i>en</i>). When using SQL stats, the <i>gg_winmotd</i> table is updated before the MOTD is opened if the value of <i>gg_winner_motd</i> is a URL or <i>2</i>.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_afk_protection (default: 0)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>If enabled, players can't get points for killing AFK players. A player is considered AFK every time they spawn until they move, look, or shoot. Set to <i>2</i> to use the stricter, less-reliable method that was in pre-2.13 versions.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_top10_ppp (default: 8)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>How many players to display per page on the top 10 list. Setting this to a URL will open a MOTD window using that URL when players type <i>!topX</i> (to be used with SQL stats primarily). The requested URL will include the query parameters <i>i=PLAYER_ID</i> and <i>l=PLAYER_LANG</i>, where <i>PLAYER_ID</i> is the individual player's unique in-game ID (<i>1</i>-<i>32</i>) and <i>PLAYER_LANG</i> is the player's two-digit language code (e.g. <i>en</i>).</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </details>
+                <details>
+                    <summary><strong>Autovote Cvars</strong></summary>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>CVAR</th>
+                                <th>Version</th>
+                                <th>Configuration</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>gg_autovote_mode (default: 0)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The type of vote that comes up automatically after a certain number of rounds/time (see below cvars). The vote types are as follows: <i>1</i> = GunGame on/off; <i>2</i> = GunGame teamplay/regular; <i>3</i> = GunGame teamplay/regular/off. Set to <i>0</i> to disable this feature. Can optionally specify a comma-separated sequence, e.g. <i>3,1,2</i>.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_autovote_rounds (default: 1)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The number of rounds after the start of a new map it takes before starting the autovote.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_autovote_delay (default: 8.0)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>How many seconds after the appropiate round start (based on <i>gg_autovote_rounds</i>) to start the autovote.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_autovote_ratio (default: 0.51)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The ratio of votes required to enable GunGame. This is used for both <i>amx_gungame_vote</i> and the autovote.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_autovote_time (default: 10.0)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>How many seconds players have to vote. This is used for both <i>amx_gungame_vote</i> and the autovote.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </details>
+                <details>
+                    <summary><strong>Stats Cvars</strong></summary>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>CVAR</th>
+                                <th>Version</th>
+                                <th>Configuration</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>gg_stats_file (default: gungame.stats)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The file to use for logging wins (starts in <i>cstrike/</i> or <i>czero/</i> directory). Leave blank to disable win logging.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_stats_ip (default: 0)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Set to <i>1</i> to track stats by IP address instead of STEAM ID, or set to <i>-1</i> to track by player name.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_stats_prune (default: 2592000)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>How old, in seconds, a stat entry can be before it is deleted. Use <i>0</i> to leave all stat entries infinitely.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_stats_mode (default: 2)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The method used for scoring players. <i>0</i> = disabled, <i>1</i> = by wins, <i>2</i> = by points. If using <i>2</i>, at the end of a game, every player gets one point for each level they gained, the winner getting a bonus based on the <i>gg_stats_winbonus</i> cvar.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_stats_split (default: 0)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>If enabled, keeps separate stats for regular and teamplay mode.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_stats_winbonus (default: 1.5)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>If using <i>gg_stats_mode 2</i>, the winner gets this times as many points as regular.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </details>
+                <details>
+                    <summary><strong>SQL Cvars</strong></summary>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>CVAR</th>
+                                <th>Version</th>
+                                <th>Configuration</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>gg_sql_host (default: 127.0.0.1)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The SQL hostname to use for connecting.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_sql_user (default: root)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The SQL user to use for connecting.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_sql_pass (default is blank)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The SQL password to use for connecting.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_sql_db (default: amx)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The database name to use.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_sql_table (default: gg_stats)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The table name where the regular stats are stored.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_sql_streak_table (default: gg_streaks)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The table name where the win streaks are stored.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_sql_winmotd_table (default: gg_winmotd)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The table name where the MOTD player information is stored.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </details>
+                <details>
+                    <summary><strong>Deathmatch Cvars</strong></summary>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>CVAR</th>
+                                <th>Version</th>
+                                <th>Configuration</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>gg_dm (default: 1)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Enables deathmatch mode (a.k.a. infinite respawn).</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_dm_sp_time (default: 1.0)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The time (in seconds) that a player's spawn protection peroid lasts. Use <i>0.0</i> to disable spawn protection.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_dm_sp_mode (default: 1)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td><i>1</i> = if killed during spawn protection, killer gets no points. <i>2</i> = completely invincible during spawn protection. Use <i>0</i> to disable spawn protection.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_dm_spawn_random (default: 2)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Makes players respawn in a random (team-ambiguous) spawn. If CSDM spawn points are installed for the current map, then those will be used instead. If this cvar is set to <i>2</i>, then players will only respawn randomly when there are CSDM spawn points for the current map.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_dm_start_random (default: 1)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>If players are placed at random CSDM spawns on round start (only as long as there are as many CSDM spawn points as there are players).</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_dm_spawn_delay (default: 3.0)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The time (in seconds) that it takes to respawn after dying.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_dm_spawn_afterplant (default: 1)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Controls whether players respawn after the bomb has been planted.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_dm_corpses (default: 1)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Toggles whether player corpses stay on the ground in deathmatch mode.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_dm_countdown (default: 2)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Shows a countdown timer to players telling them how much time until they respawn. The cvar value changes the display mode: <i>1</i> = center say, <i>2</i> = HUD message, <i>3</i> = both.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </details>
+                <details>
+                    <summary><strong>Objective Cvars</strong></summary>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>CVAR</th>
+                                <th>Version</th>
+                                <th>Configuration</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>gg_block_objectives (default: 0)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Removes objectives on bomb and hostage maps (no VIP support for GunGame).</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_bomb_defuse_lvl (default: 1)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Gives players a level when they plant or defuse the bomb. If set to <i>2</i>, Terrorists only gain a level if they plant the bomb <i>and it explodes</i>, whereas if set to <i>1</i>, they only need to plant it to gain a level.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_host_touch_reward (default: 2)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Players gain one score (not level) if they touch this many unique hostages in the same round. A value of <i>0</i> disables this feature.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_host_rescue_reward (default: 2)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Players gain one level if they rescue this many unique hostages in the same round. A value of <i>0</i> disables this feature.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_host_kill_reward (default: 1)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>How much EXTRA score (not level) a Terrorist gets for killing a CT that was escorting a hostage. Players can't go up more than one extra level by this. A value of <i>0</i> disables this feature. <b>DOES NOT WORK IN CONDITION ZERO!</b></td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_host_kill_penalty (default: 1)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>How much score (not level) a player loses for killing a hostage.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </details>
+                <details>
+                    <summary><strong>Teamplay Cvars</strong></summary>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>CVAR</th>
+                                <th>Version</th>
+                                <th>Configuration</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>gg_teamplay (default: 0)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Controls teamplay mode. See <a href="https://gungame-amxx.org/faq.php#q12">FAQ Question 12</a> for more information. If set to <i>2</i>, teamplay mode will be randomly on or off every GunGame round. Can optionally specify a comma-separated sequence, e.g. <i>0,2,1</i>.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_teamplay_knife_mod (default: 0.33)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The kill goal modifier for melee weapons while playing teamplay mode. So using its default value, a team would only need to get 1 knife kill for every 3 players on its team (rounded up), instead of 1 for 1.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_teamplay_nade_mod (default: 0.50)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The kill goal modifier for grenade weapons while playing teamplay mode. So using its default value, a team would only need to get 1 grenade kill for every 2 players on its team (rounded up), instead of 1 for 1.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_teamplay_timeratio (default: 1)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>If enabled, you have to spend at least half of your time on the winning team of a teamplay match to receive a win. Also, the points you get from each team are based on the percentage of time played on those teams. For example, if you spend 25% of your time on CT and 75% on T, while the CTs get 20 points and the Ts get 24 points, you would get 25% x 20 = 5 and 75% x 24 x 1.5 (<i>gg_stats_winbonus</i>) = 27, for 32 total.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </details>
+                <details>
+                    <summary><strong>Gameplay Cvars</strong></summary>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>CVAR</th>
+                                <th>Version</th>
+                                <th>Configuration</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>gg_ff_auto (default: 1)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Turns friendly-fire on when someone reaches the grenade level. Friendly-fire will turn itself back off when no one is on the grenade or knife level anymore.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_weapon_order (default: glock18,usp,p228,deagle,fiveseven,elite,m3,xm1014,tmp,mac10,mp5navy,ump45,p90,galil,famas,ak47,scout,m4a1,sg552,aug,m249,hegrenade,knife)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The order of weapon levels. Separate each weapon with a comma, and don't use spaces. You can have up to 36, and they can repeat. Append <i>:X</i> to a weapon's name to apply a custom kill requirement for that weapon. For example, <i>deagle:5</i> would require players to get 5 kills with the Desert Eagle.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_max_lvl (default: 3)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The maximum number of levels obtainable per round, per person. Use <i>0</i> for infinite. Overriden by <i>gg_turbo</i>.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_triple_on (default: 0)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Gives players a 10-second star (think Mario) if they gain 3 levels in one round. Disabled if <i>gg_turbo</i> is enabled, unless <i>gg_triple_on</i> is set to <i>2</i>.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_turbo (default: 1)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Instantly gives a player his new weapon upon level up, instead of having to wait until the next round.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_knife_pro (default: 1)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Allows players to steal levels from other players by killing them with a knife. <i>1</i> = regular knife pro; <i>2</i> = killer gets a level but the victim doesn't lose a level; <i>3</i> = killer only gets one point and the victim goes down a level.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_knife_elite (default: 0)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>If knife elite mode is enabled, once you level up, you are forced to use a knife until the next round or until you die.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_suicide_penalty (default: 1)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Whether players lose a level for committing suicide. It should probably be set to <i>0</i> for teamplay mode in order to prevent griefing.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_worldspawn_suicide (default: 1)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>If deaths by worldspawn are considered suicide.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_pickup_others (default: 0)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Allows players to pick up weapons that don't belong to their level. Players can't level up using a weapon that doesn't belong to their level.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_handicap_on (default: 1)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td><i>1</i> = sets the level of late-joiners to the average level in the server. <i>2</i> = sets them instead to the level of the currently lowest leveled player (ignoring bots, unless bots are the only players that are above level 1).</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_top10_handicap (default: 1)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>If players in the top 10 list of wins still receive the handicap.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_warmup_timer_setting (default: 60)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The time (in seconds) for the warmup round when the map starts, giving players time to connect. A value of <i>0.0</i> disables warmup round.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_warmup_weapon (default: knife)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Everyone must use this weapon during the warmup. Leave blank to disable.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_warmup_multi (default: 0)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>If using multiple map iterations (<i>gg_map_iterations</i>), whether to have a warmup round for each iteration.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_nade_glock (default: 1)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Gives players on the grenade level a Glock with only 50 backpack ammo.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_nade_smoke (default: 0)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Gives players on the grenade level a smoke grenade.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_nade_flash (default: 0)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Gives players on the grenade level one flashbang.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_extra_nades (default: 1)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Gives players that are on the grenade level another HE Grenade every time they get a kill with any weapon. Players can still only have up to one HE Grenade at a time.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_nade_refresh (default: 5.0)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Gives players that are on the grenade level another HE Grenade this often (in seconds) when they are out. Set to <i>0.0</i> to disable. Players can still only have up to one HE Grenade at a time.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_kills_per_lvl (default: 2)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The amount of kills you must gain in order to level up. This is always 1 for the grenade and knife levels, unless using a custom kill requirement (see <i>gg_weapon_order</i>).</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_kills_botmod (default: 1.0)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The kills per level for bots is multipled by this value. For example, setting this to <i>0.5</i> would halve the amount of kills that bots have to get versus humans. Doesn't work in teamplay.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_give_armor (default: 100)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The amount of armor that players receive upon spawning (or after a kill, when using <i>gg_refill_on_kill</i>).</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_give_helmet (default: 1)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Gives players a helmet upon spawning.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_ammo_amount (default: 200)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The amount of backpack ammo given to each weapon. Use <i>-1</i> to use the default max backpack ammo (for example, 120 to the MP5, 35 to the Desert Eagle, etcetera).</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_refill_on_kill (default: 1)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Refills a player's clip, backpack ammo, and armor (based on above cvars) whenever they get a kill.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_tk_penalty (default: 1)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The amount of score (not levels) deducted from a player for a teamkill. Players can't go down more than one level per teamkill. Use <i>0</i> for no penalty. Use <i>-1</i> to treat teamkills as regular kills.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_awp_oneshot (default: 1)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Gives the AWP only 1 bullet per clip, as opposed to the default 10.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_bots_skipnade (default: 0)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>If enabled, bot players skip the grenade level. Doesn't work in teamplay.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_bots_knifeable (default: 1)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>If disabled, then humans can't steal levels or pass the knife level by knifing bots.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </details>
+                <details>
+                    <summary><strong>Sound Cvars</strong></summary>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>CVAR</th>
+                                <th>Version</th>
+                                <th>Configuration</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>gg_sound_levelup (default: sound/gungame/gg_levelup.wav)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The sound played to a player when he levels up. Leave blank to disable.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_sound_leveldown (default: sound/ambience/xtal_down1(e70))</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The sound played to a player when he levels down. Leave blank to disable.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_sound_levelsteal (default: sound/turret/tu_die.wav)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The sound played instead of <i>gg_sound_levelup</i> when you steal a level from someone. Leave blank to disable.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_sound_nade (default: sound/gungame/gg_nade_level.wav)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The sound played to everyone when a player is on the grenade level at start of round. Leave blank to disable.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_sound_knife (default: sound/gungame/gg_knife_level.wav)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The sound played to everyone when a player is on the knife  level at start of round. Leave blank to disable.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_sound_welcome (default: sound/gungame/gg_welcome.wav)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The sound played to a player when he joins (and receives the popup message), if <i>gg_join_msg</i> is <i>1</i>. Leave blank to disable.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_sound_triple (default: sound/gungame/gg_triple.wav)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The sound emitted by a player that has the triple-level star (see <i>gg_triple_on</i>). The sound must be 10 seconds long to coincide with the functionality, and has to be a WAV file. Leave blank to disable.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_sound_winner (default: media/Half-Life03.mp3;media/Half-Life08.mp3;media/Half-Life11.mp3;media/Half-Life17.mp3)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The sound played to everyone when a player wins the game. Leave blank to disable. If you list multiple songs separated by semicolons (<i>;</i>), a random one will be chosen.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_sound_takenlead (default: sound/gungame/gg_takenlead.wav)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The sound played to a player when he gains the lead with <i>gg_lead_sounds</i> enabled. Leave blank to disable.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_sound_tiedlead (default: sound/gungame/gg_tiedlead.wav)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The sound played to a player when he becomes tied for the lead with <i>gg_lead_sounds</i> enabled. Leave blank to disable.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_sound_lostlead (default: sound/gungame/gg_lostlead.wav)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The sound played to a player when he loses the lead with <i>gg_lead_sounds</i> enabled. Leave blank to disable.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_lead_sounds (default: 0.8)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The delay between gaining a level and playing the lead sounds to a player. You should only have to change this if you use custom level change sounds. Set this to <i>0.0</i> to disable playing the lead sounds entirely.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </details>
+                <details>
+                    <summary><strong>Random Weapon Order Cvars</strong></summary>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>CVAR</th>
+                                <th>Version</th>
+                                <th>Configuration</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>gg_weapon_order1 (default is blank)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The first possible random weapon order. Leave blank to disable.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_weapon_order2 (default is blank)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The second possible random weapon order. Leave blank to disable.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_weapon_order3 (default is blank)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The third possible random weapon order. Leave blank to disable.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_weapon_order4 (default is blank)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The fourth possible random weapon order. Leave blank to disable.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_weapon_order5 (default is blank)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The fifth possible random weapon order. Leave blank to disable.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_weapon_order6 (default is blank)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The sixth possible random weapon order. Leave blank to disable.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_weapon_order7 (default is blank)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The seventh possible random weapon order. Leave blank to disable.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_weapon_order8 (default is blank)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The eighth possible random weapon order. Leave blank to disable.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_weapon_order9 (default is blank)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The ninth possible random weapon order. Leave blank to disable.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_weapon_order10 (default is blank)</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>The tenth possible random weapon order. Leave blank to disable.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </details>
+                <details>
+                    <summary><strong>Commands</strong></summary>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Command</th>
+                                <th>Version</th>
+                                <th>Configuration</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>amx_gungame &lt;0|1&gt;</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Toggles the functionality of GunGame. Always use this to enable or disable GunGame in the middle of a map. Requires <i>ADMIN_CVAR</i> (or flag <i>g</i>) access to use.</td>
+                            </tr>
+                            <tr>
+                                <td><code>amx_gungame_level &lt;target&gt; &lt;level&gt;</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Changes a player's level. <i>target</i> can be a player name, <i>*</i>, <i>@ALL</i>, <i>@TERRORIST</i>, or <i>@CT</i>. If <i>level</i> is prepended with a plus (<i>+</i>) or minus (<i>-</i>) symbol, the level change is relative. Otherwise, the level change is absolute. Requires <i>ADMIN_BAN</i> (or flag <i>d</i>) access to use.</td>
+                            </tr>
+                            <tr>
+                                <td><code>amx_gungame_score &lt;target&gt; &lt;score&gt; [dont_refill]</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Sets a player's score. <i>target</i> can be a player name, <i>*</i>, <i>@ALL</i>, <i>@TERRORIST</i>, or <i>@CT</i>. If <i>score</i> is prepended with a plus (<i>+</i>) or minus (<i>-</i>) symbol, the score change is relative. Otherwise, the score change is absolute. Set <i>dont_refill</i> to not refill a player's ammo and armor. Requires <i>ADMIN_BAN</i> (or flag <i>d</i>) access to use.</td>
+                            </tr>
+                            <tr>
+                                <td><code>amx_gungame_vote [mode]</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Starts a vote to enable or disable GunGame. Requires <i>ADMIN_VOTE</i> (or flag <i>j</i>) access to use.</td>
+                            </tr>
+                            <tr>
+                                <td><code>amx_gungame_win [target]</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Forces <i>target</i> to win. If no target is provided, the best player will be chosen (sorted by highest level, then highest kills, then least deaths). Requires <i>ADMIN_BAN</i> (or flag <i>d</i>) access to use.</td>
+                            </tr>
+                            <tr>
+                                <td><code>amx_gungame_teamplay &lt;0|1&gt; [killsperlvl] [suicidepenalty]</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Toggles teamplay mode. You can optionally specify new cvar values for <i>gg_killsperlvl</i> and <i>gg_suicidepenalty</i>. Requires <i>ADMIN_BAN</i> (or flag <i>d</i>) access to use.</td>
+                            </tr>
+                            <tr>
+                                <td><code>amx_gungame_restart [delay] [full]</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Restarts GunGame. You can optionally specify a delay, in seconds. If full, reloads config and everything. Requires <i>ADMIN_BAN</i> (or flag <i>d</i>) access to use.</td>
+                            </tr>
+                            <tr>
+                                <td><code>gg_reloadweapons</code></td>
+                                <td><code>2.13c</code></td>
+                                <td>Reloads the weapon order and the kills per level from the cvars. This must be used if either of those two things are changed mid-game. Can only be called by server.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </details>
+                <!-- BEGIN LEGACY SQL CONTENT -->
+                <div id="legacy-sql-content">
+                    <p>Since version 2.13, GunGame has optional built-in SQL stats storage. It's generally much faster and more efficient than the flat-file alternative. If you wish to use it, simply compile <i>gungame.sma</i> with the <i>#define SQL</i> line near the top of the file uncommented. If you download the "SQL stats" package, this has already been done for you. (To be clear: download <b>only</b> the "flat-file stats" package or <b>only</b> the "SQL stats" package, depending on the method of stats storage you wish to use.)</p>
+                    <p><b>You can go <a href="https://gungame-amxx.org/sql_convert.php">here</a> to convert your old flat-file stats files into SQL queries which you can use to populate your stats database.</b></p>
+                    <p>When you run GunGame with SQL for the first time, it will automatically create any tables that it needs. (If you previously used the old <a href="https://gungame-amxx.org/ggsql.php">GunGame SQL</a> plugin, please delete or rename your old <i>gg_stats</i> table, or make sure that <i>gungame.amxx</i> uses a different table name.) SQL stats will be pruned just like flat-file stats based on <i>gg_stats_prune</i>. A list of all the SQL-specific cvars can be seen below.</p>
+                    <details>
+                        <summary><strong>SQL Cvars</strong></summary>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>CVAR</th>
+                                    <th>Version</th>
+                                    <th>Configuration</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><code>gg_sql_host (default: &quot;localhost&quot;)</code></td>
+                                    <td><code>2.13c</code></td>
+                                    <td>The SQL hostname to use for connecting.</td>
+                                </tr>
+                                <tr>
+                                    <td><code>gg_sql_user (default: &quot;root&quot;)</code></td>
+                                    <td><code>2.13c</code></td>
+                                    <td>The SQL user to use for connecting.</td>
+                                </tr>
+                                <tr>
+                                    <td><code>gg_sql_pass (default: &quot;&quot;)</code></td>
+                                    <td><code>2.13c</code></td>
+                                    <td>The SQL password to use for connecting.</td>
+                                </tr>
+                                <tr>
+                                    <td><code>gg_sql_db (default: &quot;gungame&quot;)</code></td>
+                                    <td><code>2.13c</code></td>
+                                    <td>The database name to use.</td>
+                                </tr>
+                                <tr>
+                                    <td><code>gg_sql_table (default: &quot;gg_stats&quot;)</code></td>
+                                    <td><code>2.13c</code></td>
+                                    <td>The table name where the regular stats are stored.</td>
+                                </tr>
+                                <tr>
+                                    <td><code>gg_sql_streak_table (default: &quot;gg_streaks&quot;)</code></td>
+                                    <td><code>2.13c</code></td>
+                                    <td>The table name where the win streaks are stored.</td>
+                                </tr>
+                                <tr>
+                                    <td><code>gg_sql_winmotd_table (default: &quot;gg_winmotd&quot;)</code></td>
+                                    <td><code>2.13c</code></td>
+                                    <td>The table name where the MOTD player information is stored.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </details>
+                    <p></li> </ul></p>
+                    <p>Below are descriptions of all of the tables used by GunGame. <i>gg_sql_table</i> holds most of the important stats information for all of the players -- it could have a lot of rows. <i>REFRESH_TIMESTAMP_ON_JOIN</i> is a <i>#define</i> near the top of <i>gungame.sma</i> that is turned off by default for <i>gungame.amxx</i> but is on by default for <i>gungame_with_sql.amxx</i>.</p>
+                    <details>
+                        <summary><strong>gg_sql_table</strong></summary>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Column</th>
+                                    <th>SQL type</th>
+                                    <th>Meaning</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><code>authid</code></td>
+                                    <td>varchar(31)</td>
+                                    <td>The player's authid/IP/name (depending on <i>gg_stats_ip</i>).</td>
+                                </tr>
+                                <tr>
+                                    <td><code>wins</code></td>
+                                    <td>smallint(6)</td>
+                                    <td>The player's wins (overall or non-teamplay, depending on <i>gg_stats_split</i>).</td>
+                                </tr>
+                                <tr>
+                                    <td><code>name</code></td>
+                                    <td>varchar(31)</td>
+                                    <td>The player's most recent name upon completion of a round of GunGame.</td>
+                                </tr>
+                                <tr>
+                                    <td><code>timestamp</code></td>
+                                    <td>int(10)</td>
+                                    <td>The server's UNIX timestamp the last time this was "refreshed." If <i>REFRESH_TIMESTAMP_ON_JOIN</i> was used, it's refreshed whenever the player joins the server. Otherwise, it's refreshed whenever they finish a round of GunGame.</td>
+                                </tr>
+                                <tr>
+                                    <td><code>points</code></td>
+                                    <td>mediumint(9)</td>
+                                    <td>The player's points (overall or non-teamplay, depending on <i>gg_stats_split</i>).</td>
+                                </tr>
+                                <tr>
+                                    <td><code>streak</code></td>
+                                    <td>smallint(6)</td>
+                                    <td>The player's record win streak (overall or non-teamplay, depending on <i>gg_stats_split</i>).</td>
+                                </tr>
+                                <tr>
+                                    <td><code>wins_tp</code></td>
+                                    <td>smallint(6)</td>
+                                    <td>The player's teamplay-specific wins (if using <i>gg_stats_split</i>).</td>
+                                </tr>
+                                <tr>
+                                    <td><code>points_tp</code></td>
+                                    <td>mediumint(9)</td>
+                                    <td>The player's teamplay-specific points (if using <i>gg_stats_split</i>).</td>
+                                </tr>
+                                <tr>
+                                    <td><code>streak_tp</code></td>
+                                    <td>smallint(6)</td>
+                                    <td>The player's teamplay-specific win streak (if using <i>gg_stats_split</i>).</td>
+                                </tr>
+                                <tr>
+                                    <td><code>serverip</code></td>
+                                    <td>varchar(63)</td>
+                                    <td>The server IP, with port (e.g. <i>123.456.789.123:45678</i>).</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </details>
+                    <p>The <i>gg_sql_streak_table</i> is used to keep track of the all-time record streaks and also the current running streaks of individual players. It theoretically shouldn't ever have more than 66 rows for a given server IP.</p>
+                    <details>
+                        <summary><strong>gg_sql_streak_table</strong></summary>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Column</th>
+                                    <th>SQL type</th>
+                                    <th>Meaning</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><code>type</code></td>
+                                    <td>enum(&#x27;0C&#x27;, &#x27;0R&#x27;, &#x27;1C&#x27;, &#x27;1R&#x27;)</td>
+                                    <td>The type of entry that this row is. A leading 0 means this row is for overall or non-teamplay, and a leading 1 means this is for teamplay-specific (all according to <i>gg_stats_split</i>). A trailing C means this row is for keeping track of a current running streak, while a trailing R means this is a record streak.</td>
+                                </tr>
+                                <tr>
+                                    <td><code>authid</code></td>
+                                    <td>varchar(31)</td>
+                                    <td>The player's authid/IP/name (depending on <i>gg_stats_ip</i>).</td>
+                                </tr>
+                                <tr>
+                                    <td><code>streak</code></td>
+                                    <td>smallint(6)</td>
+                                    <td>The value of the win streak in question (currently running if C-type, or record if R-type).</td>
+                                </tr>
+                                <tr>
+                                    <td><code>name</code></td>
+                                    <td>varchar(31)</td>
+                                    <td>The player's name when this streak was last updated (C-type) or when this record was made (R-type).</td>
+                                </tr>
+                                <tr>
+                                    <td><code>timestamp</code></td>
+                                    <td>int(10)</td>
+                                    <td>The server's UNIX timestamp when this streak was last updated (C-type) or when this record was made (R-type).</td>
+                                </tr>
+                                <tr>
+                                    <td><code>serverip</code></td>
+                                    <td>varchar(63)</td>
+                                    <td>The server IP, with port (e.g. <i>123.456.789.123:45678</i>).</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </details>
+                    <p>The <i>gg_sql_winmotd_table</i> is used to temporarily store the information of each player at the end of each GunGame round for the purpose of using it on your own custom win screen MOTD page. <b>This table is only updated if <i>gg_winner_motd</i> is set to <i>2</i> or a URL address.</b> It shouldn't ever have more than 33 rows for a given server IP. The wins, points, streak, and stats position fields refer to all-around stats (if <i>gg_stats_split</i> is <i>0</i>), non-teamplay stats (if <i>gg_stats_split</i> is <i>1</i> but <i>gg_teamplay</i> is <i>0</i>), or teamplay-specific stats (if <i>gg_stats_split</i> is <i>1</i> and <i>gg_teamplay</i> is <i>1</i>).</p>
+                    <p>Additionally, a special "information row" with the <i>id</i> set to <i>0</i> is also inserted that contains the values of miscellaneous pertinent information amongst the fields.</p>
+                    <details>
+                        <summary><strong>gg_sql_winmotd_table</strong></summary>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Column</th>
+                                    <th>SQL type</th>
+                                    <th>Meaning</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><code>id</code></td>
+                                    <td>tinyint(4)</td>
+                                    <td>The player's unique in-game ID (<i>1</i>-<i>32</i>). If <i>0</i>, this is the information row.</td>
+                                </tr>
+                                <tr>
+                                    <td><code>authid</code></td>
+                                    <td>varchar(31)</td>
+                                    <td>The player's authid/IP/name (depending on <i>gg_stats_ip</i>). If information row, blank.</td>
+                                </tr>
+                                <tr>
+                                    <td><code>name</code></td>
+                                    <td>varchar(31)</td>
+                                    <td>The player's name. If information row, the value of <i>amx_nextmap</i>.</td>
+                                </tr>
+                                <tr>
+                                    <td><code>team</code></td>
+                                    <td>tinyint(4)</td>
+                                    <td>The player's team (<i>0</i>-<i>3</i>). If information row, the value of <i>gg_stats_mode</i>.</td>
+                                </tr>
+                                <tr>
+                                    <td><code>level</code></td>
+                                    <td>tinyint(4)</td>
+                                    <td>The player's level. If information row, the value of <i>gg_stats_split</i>.</td>
+                                </tr>
+                                <tr>
+                                    <td><code>weapon</code></td>
+                                    <td>varchar(23)</td>
+                                    <td>The name of the player's level weapon. If information row, blank.</td>
+                                </tr>
+                                <tr>
+                                    <td><code>flags</code></td>
+                                    <td>tinyint(4)</td>
+                                    <td>Bitwise flags for special things. <i>1</i> = player was on winning team; <i>2</i> = player was on losing team; <i>4</i> = player was the final killer (if on winning team) or the final victim (if on losing team); <i>8</i> = player just set a new server record streak. If information row, the value of <i>gg_teamplay</i>.</td>
+                                </tr>
+                                <tr>
+                                    <td><code>wins</code></td>
+                                    <td>smallint(6)</td>
+                                    <td>The player's new total wins for this game mode. If information row, the value of <i>gg_teamplay_timeratio</i>.</td>
+                                </tr>
+                                <tr>
+                                    <td><code>points</code></td>
+                                    <td>mediumint(9)</td>
+                                    <td>The number of points the player just earned. If information row, the in-game ID of the final killer (<i>1</i>-<i>32</i>).</td>
+                                </tr>
+                                <tr>
+                                    <td><code>new_points</code></td>
+                                    <td>mediumint(9)</td>
+                                    <td>The player's new total points for this game mode. If information row, the in-game ID of the final victim (<i>0</i>-<i>32</i>).</td>
+                                </tr>
+                                <tr>
+                                    <td><code>record_streak</code></td>
+                                    <td>smallint(6)</td>
+                                    <td>The player's previous record streak for this game mode. If information row, <i>1</i> if the final victim was disconnected, or <i>0</i> if not.</td>
+                                </tr>
+                                <tr>
+                                    <td><code>current_streak</code></td>
+                                    <td>smallint(6)</td>
+                                    <td>The player's current running streak for this game mode. If information row, the winning team (<i>1</i> or <i>2</i>).</td>
+                                </tr>
+                                <tr>
+                                    <td><code>stats_position</code></td>
+                                    <td>smallint(6)</td>
+                                    <td>The player's new stats position for this game mode. If information row, the losing team (<i>1</i> or <i>2</i>).</td>
+                                </tr>
+                                <tr>
+                                    <td><code>teamtime_winning</code></td>
+                                    <td>smallint(6)</td>
+                                    <td>The time in seconds that the player spent on the winning team. If information row, the value of <i>gg_map_iterations</i>.</td>
+                                </tr>
+                                <tr>
+                                    <td><code>teamtime_losing</code></td>
+                                    <td>smallint(6)</td>
+                                    <td>The time in seconds that the player spent on the losing team. If information row, the number of GunGame rounds left before changing maps (a negative number means infinity).</td>
+                                </tr>
+                                <tr>
+                                    <td><code>timestamp</code></td>
+                                    <td>int(10)</td>
+                                    <td>The server's UNIX timestamp at the end of the GunGame round.</td>
+                                </tr>
+                                <tr>
+                                    <td><code>serverip</code></td>
+                                    <td>varchar(63)</td>
+                                    <td>The server IP, with port (e.g. <i>123.456.789.123:45678</i>).</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </details>
+                    <p>Additionally, if using a custom <i>gg_winner_motd</i> web page, the page is queried by each user like so:</p>
+                    <pre>
+URL_ADDRESS?i=PLAYER_ID&amp;l=PLAYER_LANG</pre>
+                    <p>where <i>URL_ADDRESS</i> is the value of <i>gg_winner_motd</i>, <i>PLAYER_ID</i> is the individual player's unique in-game ID (<i>1</i>-<i>32</i>), and <i>PLAYER_LANG</i> is the player's two-digit language code (e.g. <i>en</i>). This way you can figure out which player is requesting the current page.</p>
+                    <p>The same thing happens when using <i>gg_top10_ppp</i> as a custom web page.</p>
+                </div>
+                <!-- END LEGACY SQL CONTENT -->
+
+            </section>
+            <section id="faq">
+                <h2>15. Frequently asked questions</h2>
+                <p>The following answers apply to GunGame AMXX 3++ 3.0.0-rc3. Historical answers are preserved separately below.</p>
+                <details id="faq-turbo">
+                    <summary>How can I receive the next weapon immediately?</summary>
+                    <p>Enable turbo mode in <code>gungame.cfg</code>:</p>
+                    <pre>gg_turbo 1</pre>
+                    <p>See <a href="#reference">the CVAR reference</a> for related settings.</p>
+                </details>
+                <!-- BEGIN CURRENT FAQ ENTRIES-->
+                <details id="faq-current-install">
+                    <summary>Do I need separate SQL and flat-file versions of GunGame?</summary>
+                    <p>No. The same 3++ plugin supports both backends. Set <code>gg_stats_backend 0</code> for local files or <code>gg_stats_backend 1</code> for SQL in <code>gungame.cfg</code>. Change map or restart the server after changing the backend. See <a href="#install">installation</a>.</p>
+                </details>
+                <details id="faq-current-load">
+                    <summary>Why is GunGame not running?</summary>
+                    <p>Check that <code>gungame.amxx</code> is enabled once in <code>plugins.ini</code>, that the matching dictionary and assets are installed, and that <code>gg_enabled</code> is set to 1. Run these commands in the server console and inspect the AMXX error logs:</p>
+                    <pre>amxx version
+amxx plugins
+amxx modules
+gg_info
+gg_status</pre>
+                </details>
+                <details id="faq-current-config">
+                    <summary>Where does GunGame read its configuration?</summary>
+                    <p>GunGame searches the AMXX configuration directory first, then the game directory, for <code>gungame.cfg</code> and <code>gungame_teamplay.cfg</code>. Avoid maintaining conflicting copies. See <a href="#install-mapconfigs">per-map configuration</a>.</p>
+                </details>
+                <details id="faq-current-order">
+                    <summary>How do I configure a fixed weapon sequence?</summary>
+                    <p>Set <code>gg_weapon_order</code> to a comma-separated sequence of weapon names. Clear alternative sequences <code>gg_weapon_order1</code> through <code>gg_weapon_order10</code> if random alternatives are not wanted.</p>
+                    <pre>gg_weapon_order "glock18,mp5navy,ak47,m4a1,knife"
+gg_kills_per_lvl 2</pre>
+                    <p>Use <code>gg_reloadweapons</code> in the server console to reload weapon order and kills per level. Prefer changing the sequence between matches.</p>
+                </details>
+                <details id="faq-current-warmup">
+                    <summary>How do I disable warmup?</summary>
+                    <p>Set <code>gg_warmup_timer_setting 0</code> in the configuration. The normal compiled default is 60 seconds. <code>gg_warmup_weapon</code> selects the warmup weapon.</p>
+                </details>
+                <details id="faq-current-dm">
+                    <summary>How do I enable automatic respawning?</summary>
+                    <pre>gg_dm 1
+gg_dm_spawn_delay 3.0
+gg_dm_sp_time 1.0</pre>
+                    <p>These settings enable GunGame deathmatch, a three-second respawn delay and one second of spawn protection. Avoid running two competing respawn systems.</p>
+                </details>
+                <details id="faq-current-spawns">
+                    <summary>Why do players respawn at normal map spawn points?</summary>
+                    <p>Check <code>gg_dm_spawn_random</code> and the file <code>addons/amxmodx/configs/csdm/&lt;map&gt;.spawns.cfg</code>. Mode 0 disables random relocation; mode 1 permits ordinary map spawn positions as a fallback; mode 2 requires custom positions. GunGame reads up to 128 custom positions per map. CSDM itself is not required to read these files.</p>
+                </details>
+                <details id="faq-current-csdm">
+                    <summary>Can I use an external CSDM installation?</summary>
+                    <p>Yes, as a configuration option. Disable GunGame deathmatch with <code>gg_dm 0</code> if CSDM manages respawning. Disable competing weapon selection, such as <code>csdm_equip.amxx</code>. Verify the combination on your server; not every CSDM build has been tested.</p>
+                </details>
+                <details id="faq-current-mapcycle">
+                    <summary>How can I use a separate GunGame map rotation?</summary>
+                    <p>Create <code>addons/amxmodx/configs/gungame_mapcycle.cfg</code> with one installed map per line. See <a href="#install-mapcycle">the mapcycle search order</a> for alternative filenames and locations.</p>
+                    <pre>de_dust2
+de_inferno
+cs_office</pre>
+                </details>
+                <details id="faq-current-teamplay">
+                    <summary>How do I switch to team progression?</summary>
+                    <p>Configure <code>gg_teamplay 1</code> or use the authorized admin command <code>amx_gungame_teamplay 1</code>. Teamplay shares progression within each team. Review <code>gungame_teamplay.cfg</code> and <code>gg_stats_split</code> before switching modes.</p>
+                </details>
+                <details id="faq-current-admin">
+                    <summary>How can an administrator adjust a player level?</summary>
+                    <p>Use <code>amx_gungame_level</code> with a target and an absolute or relative level. For example:</p>
+                    <pre>amx_gungame_level #12 +1
+amx_gungame_level #12 5</pre>
+                    <p>Here #12 is an example UserID, not a player slot. The command requires ADMIN_BAN access. See <a href="#admin">administration</a>.</p>
+                </details>
+                <details id="faq-current-stats">
+                    <summary>Why are rankings disabled or unavailable?</summary>
+                    <p>Check <code>gg_stats_mode</code>: 0 disables statistics, 1 ranks by wins and 2 ranks by points. Verify the selected backend. In SQL mode check module availability, credentials, table access and AMXX logs. SQL rankings may also be temporarily unavailable while asynchronous data is loading.</p>
+                </details>
+                <details id="faq-current-sql">
+                    <summary>How do I configure a MySQL or MariaDB database?</summary>
+                    <pre>gg_stats_backend 1
+gg_stats_mode 2
+gg_sql_host "localhost"
+gg_sql_user "gungame"
+gg_sql_pass "CHANGE_ME"
+gg_sql_db "gungame"</pre>
+                    <p>These are placeholders. Create the database and grant the game-server account the required permissions. GunGame can also use central AMXX SQL settings. See <a href="#schema">the SQL setup and schema</a>. Never publish actual credentials.</p>
+                </details>
+                <details id="faq-current-outage">
+                    <summary>What happens if the SQL connection fails?</summary>
+                    <p>GunGame does not silently switch to local statistics. Gameplay and database availability are separate concerns. Failed writes are not guaranteed to be recovered or replayed. Restore connectivity, inspect the logs and change map if necessary to reinitialize SQL. Do not assume that same-map recovery or lossless persistence is guaranteed.</p>
+                </details>
+                <details id="faq-current-upgrade">
+                    <summary>Can I reuse an older GunGame database?</summary>
+                    <p>Back up all existing tables and test on a copy. Missing tables can be created by the plugin, but this is not a guarantee of automatic migration of every older schema. Compare columns, keys and table definitions with <a href="#schema">the current schema</a> before deployment.</p>
+                </details>
+                <details id="faq-current-identity">
+                    <summary>How are players identified in statistics?</summary>
+                    <p><code>gg_stats_ip 0</code> uses authentication IDs, 1 uses IP addresses and 2 uses player names. The source also accepts -1 as name-based identification. Prefer stable authentication IDs; changing identification mode can create separate records for the same player.</p>
+                </details>
+                <details id="faq-current-yapb">
+                    <summary>Can YaPB bots have individual statistics?</summary>
+                    <p>With <code>gg_stats_ip 0</code> and YaPB fake SteamIDs enabled (<code>yb_enable_fake_steamids 1</code>), GunGame can use observed bot authentication IDs. It checks the current UserID to avoid reusing a previous occupant’s cached identity. If no fake ID is observed, the original authentication behavior applies. Check <code>gg_ignore_bots</code> and <code>gg_status</code> when investigating bot statistics.</p>
+                </details>
+                <details id="faq-current-refresh">
+                    <summary>Why is a player timestamp updated when joining?</summary>
+                    <p><code>gg_stats_refresh_on_join</code> controls this policy: 0 disables it, 1 enables it for either backend, and 2 enables it only for SQL (default). This refresh is separate from awarding match points.</p>
+                </details>
+                <details id="faq-current-prune">
+                    <summary>Why have inactive players disappeared from the rankings?</summary>
+                    <p>Check <code>gg_stats_prune</code>. Its compiled default is 2592000 seconds (30 days). Review the pruning policy and back up statistics before changing retention settings.</p>
+                </details>
+                <details id="faq-current-handicap">
+                    <summary>Why does a joining player not receive handicap immediately?</summary>
+                    <p>Handicap depends on <code>gg_handicap_on</code>, match state and ranking eligibility. With SQL and top-player exclusion enabled (<code>gg_top10_handicap 0</code>), ranking data may need to arrive asynchronously. A pending decision is not necessarily a failure. Inspect <code>gg_status</code> and temporary handicap diagnostics.</p>
+                </details>
+                <details id="faq-current-motd">
+                    <summary>How do I enable the web winner screen?</summary>
+                    <p>Deploy the matching PHP web package, configure its database connection and select SQL mode in GunGame. Set the winner MOTD URL, for example:</p>
+                    <pre>gg_winner_motd "https://example.tld/motd.php"</pre>
+                    <p>Use your own URL, no query parameters, and keep it within 63 characters. The external screen depends on a successful SQL snapshot write. See <a href="#web">web setup</a>.</p>
+                </details>
+                <details id="faq-current-snapshot">
+                    <summary>Can I store match snapshots without opening a web page?</summary>
+                    <p>Yes. With SQL initialized, <code>gg_winner_motd 2</code> requests snapshot storage while retaining the built-in winner screen. Set <code>gg_winner_motd_history 1</code> to retain historical snapshots instead of replacing the server snapshot. Plan database retention separately.</p>
+                </details>
+                <details id="faq-current-web">
+                    <summary>Why does the website show no players or match results?</summary>
+                    <p>Verify that the game server uses SQL, that the web configuration points to the same database and table names, and that the web account can read them. Match results require a stored winner snapshot. Live server queries and database rankings are separate features. Use a read-only web database account.</p>
+                </details>
+                <details id="faq-current-status">
+                    <summary>Does gg_status execute database queries?</summary>
+                    <p>No. It is a read-only server-console diagnostic command that reports existing runtime state, including player slots, UserIDs, levels, weapons, ranks, cache state, pending handicap and generation. It does not issue additional SQL queries.</p>
+                </details>
+                <details id="faq-current-debug">
+                    <summary>How do I troubleshoot SQL without recompiling?</summary>
+                    <p>Enable the relevant runtime diagnostics temporarily:</p>
+                    <pre>gg_debug_sql 2
+gg_debug_ranking 2
+gg_debug_handicap 2</pre>
+                    <p>Inspect AMXX logs, then return the settings to 0. Keep <code>gg_debug_handicap_fault</code> and <code>gg_debug_handicap_delay</code> at 0 in production; these are development test controls. See <a href="#debug">runtime diagnostics</a>.</p>
+                </details>
+                <details id="faq-current-performance">
+                    <summary>Does asynchronous SQL eliminate every possible server lag?</summary>
+                    <p>No. Threaded queries reduce blocking from database operations, but initialization and some SQL operations still use synchronous paths. Network latency, server CPU load, other plugins and client connectivity can also affect gameplay. Diagnose the actual bottleneck rather than assuming every lag is caused by GunGame.</p>
+                </details>
+                <details id="faq-current-compat">
+                    <summary>Which server environments are supported?</summary>
+                    <p>The development targets are AMX Mod X 1.10, ReHLDS, ReGameDLL and YaPB. The plugin is intended for Counter-Strike and Condition Zero environments. This is not a certification of every engine, mod or third-party plugin combination. See <a href="#compat">compatibility and testing</a>.</p>
+                </details>
+                <!-- END CURRENT FAQ ENTRIES -->
+                <h3 id="legacy-faq">15.1 Original FAQ archive</h3>
+                <p>Source: <a href="https://gungame-amxx.org/faq.php">Original FAQ</a> (17 questions). Historical answers may refer to older releases.</p>
+                <!-- BEGIN LEGACY FAQ CONTENT -->
+                <p class="muted">The following FAQ entries originate from the GunGame AMXX 2.13 documentation by Avalanche. Historical requirements and compatibility statements have not been revalidated for this release. See the current installation and configuration sections for release-specific information.</p>
+                <details id="faq-original-q1">
+                    <summary>1. How do I make it so players receive their next weapon instantly upon level up?</summary>
+                    <p>Set <code>gg_turbo</code> to <code>1</code> in your <code>gungame.cfg</code> file. Read through the Gameplay Cvars section of the <a href="#legacy-cvars">Cvar List</a> page for more information.</p>
+                </details>
+                <details id="faq-original-q4">
+                    <summary>2. How do I get players to respawn at random locations?</summary>
+                    <p>Refer to the <a href="#install">Random Spawn Points</a> step of the Installation page. Also read the Deathmatch Cvars section of the <a href="#legacy-cvars">Cvar List</a> page. It's particularly important to understand the difference between using <code>gg_dm_spawn_random 1</code> and <code>gg_dm_spawn_random 2</code>.</p>
+                </details>
+                <details id="faq-original-q2">
+                    <summary>3. How do I give individual weapons specific kill requirements?</summary>
+                    <p>In the <code>gg_weapon_order</code> cvar, add <code>:X</code> to the end of a weapon name to require <code>X</code> kills for that weapon. For example:</p>
+                    <pre>gg_weapon_order "glock18,deagle:5,mp5navy:3,m4a1:4,awp:1,m249,knife:2"</pre>
+                    <p>If there is no specific goal attached to that weapon, it is assumed to be whatever <code>gg_kills_per_lvl</code> is, except for the grenade and knife levels where the default is <code>1</code>. Read through the Gameplay Cvars section of the <a href="#legacy-cvars">Cvar List</a> page for more information.</p>
+                </details>
+                <details id="faq-original-q3">
+                    <summary>4. How do I randomize the weapon order?</summary>
+                    <p>You can make use of the <code>gg_weapon_orderX</code> cvars in your <code>gungame.cfg</code> file. Starting with <code>gg_weapon_order1</code> and working your way towards <code>gg_weapon_order10</code>, set each of them to one of the possible weapon orders that you want to use, in the same format as the regular <code>gg_weapon_order</code> cvar. You don't have to use all 10 random weapon orders if you don't want to: leave any unused <code>gg_weapon_orderX</code> cvars at the end blank.</p>
+                    <p>If you're using random weapon orders, the value of your original <code>gg_weapon_order</code> cvar doesn't matter, as it will be changed at every map to one of the random choices.</p>
+                    <p>The random weapon order sequence is randomly shuffled and then played in that shuffled order. Once all the random weapon orders have been played, the sequence is reshuffled. This guarantees that every random weapon order is played with the same frequency.</p>
+                </details>
+                <details id="faq-original-q8">
+                    <summary>5. How do I set map-specific GunGame configs (e.g. weapon orders)?</summary>
+                    <p>You can achieve this with AMXX's <a href="https://wiki.alliedmods.net/Configuring_AMX_Mod_X#Map_Config_Files" target="_blank">map config file feature</a>. For example, creating a file named <code>addons/amxmodx/configs/maps/de_dust2.cfg</code> with the below contents would force the specified weapon order and disable any other possible random weapon orders while playing de_dust2.</p>
+                    <p><strong>de_dust2.cfg:</strong></p>
+                    <pre>gg_weapon_order "deagle,mp5navy,ak47,awp,knife"
+gg_weapon_order1 ""
+gg_weapon_order2 ""
+gg_weapon_order3 ""
+gg_weapon_order4 ""
+gg_weapon_order5 ""
+gg_weapon_order6 ""
+gg_weapon_order7 ""
+gg_weapon_order8 ""
+gg_weapon_order9 ""
+gg_weapon_order10 ""</pre>
+                    <p>Note that you can use map config files to override <code>any</code> cvars on a per-map basis.</p>
+                </details>
+                <details id="faq-original-q9">
+                    <summary>6. How can I get GunGame stats onto my website?</summary>
+                    <p>Check out the <a href="#legacy-sql-content">SQL Stats</a> page.</p>
+                </details>
+                <details id="faq-original-q12">
+                    <summary>7. How does teamplay mode work?</summary>
+                    <p>Teamplay mode, introduced in GunGame AMXX 2.10, can be activated by setting <code>gg_teamplay</code> to <code>1</code> (or <code>2</code> if you want it to be randomly enabled). During teamplay mode, it's the Terrorist team versus the Counter-Terrorist team.</p>
+                    <p>Instead of players leveling up individually, they level up as a team. When you kill someone, your kill gets added to your team's pool of kills. Once your team reaches the kill requirement (which is the individual kill requirement multipled by the number of players on that team), your entire team levels up.</p>
+                    <p>Level steals only net your team the individual kill requirement for that level. Also, the amount of points that you get when your team wins is based on how much time you spent on that team (percentage-based, using the time you spent on the winning team versus the time you spent on the losing team).</p>
+                </details>
+                <details id="faq-original-q5">
+                    <summary>8. Is there any way to disable the round timer?</summary>
+                    <p>GunGame doesn't include any feature to disable the round timer. However, there are other plugins and modules that can do that such as <a href="https://www.bailopan.net/csdm/" target="_blank">Counter-Strike Deathmatch</a> (CSDM) by BAILOPAN. For details on how to run GunGame and CSDM in unison, see <a href="#faq-original-q6">Can I run Counter-Strike Deathmatch (CSDM) with GunGame?</a>.</p>
+                </details>
+                <details id="faq-original-p1">
+                    <summary>9. I installed everything but GunGame just doesn't run! Why?</summary>
+                    <p>Verify that you have AMXX 1.80 or later and the AMXX Counter-Strike Addon. Read through the <a href="#install">Installing AMXX</a> step of the Installation page for verification instructions.</p>
+                    <p>If the plugin still doesn't load after verifying your AMXX installation, you can try posting on the <a href="https://forums.alliedmods.net/forumdisplay.php?f=104" target="_blank">AlliedModders forums</a> for help.</p>
+                    <p>Your forum post should include the diagnostic information listed below. Before gathering this information, you should enable debug mode on the plugin. You can do this by editing your <code>plugins.ini</code> file: replace <code>gungame.amxx</code> with <code>gungame.amxx debug</code>.</p>
+                    <p>Diagnostic information:</p>
+                    <ol>
+                        <li>The console output of <code>amxx plugins</code>, <code>amxx modules</code>, and <code>meta list</code>.</li>
+                        <li>The contents of your <code>addons/amxmodx/configs/plugins.ini</code> and <code>gungame.cfg</code> files.</li>
+                        <li>Anything in the server console that is printed during server startup, such as "Plugin failed to load: ...".</li>
+                    </ol>
+                </details>
+                <details id="faq-original-p3">
+                    <summary>10. How come some weapons don't get any extra backpack ammo, or the game crashes
+after a specific level (usually the rifles)?</summary>
+                    <p>This only happens when you're running a modded version of Counter-Strike. The most common mods that can cause this are: <b>non-Steam Counter-Strike</b>, <b>zBot</b>, <b>a cracked HLDS</b>, and <b>Counter-Strike 1.5</b>. These mods are unsupported by AMXX and by GunGame. There is no workaround except not using these mods.</p>
+                </details>
+                <details id="faq-original-p5">
+                    <summary>11. Why are some kills reported as suicides instead of kills?</summary>
+                    <p>Usually this means that you're running another plugin that changes how much damage a player does. For example, Warcraft 3 Mod or HE Damage Multiplier. Behind the scenes, deaths caused by these plugins are actually suicides and the plugins modify the death messages to hide that fact. Unfortunately these types of plugins aren't compatible with GunGame because of how they work.</p>
+                </details>
+                <details id="faq-original-p2">
+                    <summary>12. Why does all the GunGame text appear as ML_NOTFOUND ?</summary>
+                    <p>This might mean that your dictionary file (<code>addons/amxmodx/data/lang/gungame.txt</code>) is missing or broken. Try redownloading it to fix the problem.</p>
+                    <p>If you make any manual changes to the dictionary file, you must save it UTF-8 encoded <code>without</code> the byte-order mark (BOM). Only some text editors have that capability. <a href="https://notepad-plus-plus.org/" target="_blank">Notepad++</a> is one such text editor.</p>
+                </details>
+                <details id="faq-original-p6">
+                    <summary>13. Why does all the GunGame text appear as squares?</summary>
+                    <p>This means your AMXX language was changed to a language that doesn't have translations for GunGame. To revert your AMXX language to English, type this in console:</p>
+                    <p><strong>Console:</strong></p>
+                    <pre>setinfo "lang" "en"</pre>
+                </details>
+                <details id="faq-original-q6">
+                    <summary>14. Can I run Counter-Strike Deathmatch (CSDM) with GunGame?</summary>
+                    <p>Yes, CSDM is fully compatible with GunGame. To prevent GunGame and CSDM from interfering with each other, you'll want to make these configuration changes:</p>
+                    <ol>
+                        <li>Turn off GunGame's deathmatch functionality by setting <code>gg_dm</code> to <code>0</code> in your <code>gungame.cfg</code>.</li>
+                        <li>Turn off CSDM's weapon menu by disabling the <code>csdm_equip.amxx</code> plugin.</li>
+                    </ol>
+                </details>
+                <details id="faq-original-q7">
+                    <summary>15. Can I run Warcraft 3 or SuperHero Mod with GunGame?</summary>
+                    <p>You can try, but those plugins probably won't work well with GunGame. Those plugins cause players to do extra damage (see <a href="#faq-original-p5">Why are some kills reported as suicides instead of kills?</a> for why this is a problem) and sometimes give players extra weapons, which conflicts with GunGame's functionality.</p>
+                </details>
+                <details id="faq-original-q13">
+                    <summary>16. Can I use weapon mods like the RPG or Flamethrower with GunGame?</summary>
+                    <p>Unfortunately not. While these mods may still technically work with GunGame, you cannot add them to GunGame's weapon order. This is because of the difficulties associated with integrating each of these plugins into GunGame's existing system.</p>
+                </details>
+                <details id="faq-original-p4">
+                    <summary>17. I'm running Deagles' Map Management (DMM), so why aren't the map votes coming up?</summary>
+                    <p>There are a couple things that could be going wrong. First, make sure you have <code>gg_vote_setting</code> set to <code>1</code> or higher in your <code>gungame.cfg</code> file (see the Basic Cvars section of the <a href="#legacy-cvars">Cvar List</a> page for more information).</p>
+                    <p>Next, verify that you don't have a <code>gungame_mapcycle.txt</code> file in the mod directory (<code>cstrike/</code> or <code>czero/</code>) or in your <code>addons/amxmodx/configs/</code> directory. If you're using a GunGame map cycle file then no votes will occurr.</p>
+                    <p>If it still doesn't work, verify that your DMM plugin file is named correctly. If you're running <b>DMM 2.30b</b> the plugin file must be named <code>deagsmapmanage230b.amxx</code>. If you're running <b>any other version</b> of DMM, the plugin file must be named <code>deagsmapmanager.amxx</code>.</p>
+                    <p>If there are still no votes occurring, make sure you're running DMM in voting mode and not in cycle mode. You can set DMM to voting mode via the <code>dmap_votemode</code> command (requires high admin access, or you can run it in the server console). If it says "Unknown command" then DMM isn't even running in the first place.</p>
+                    <p>After all that, if still no votes come up, monitor your server console around the time that the votes <code>should</code> be occurring to check for messages from DMM which could provide some insight.</p>
+                </details>
+
+                <!-- END LEGACY FAQ CONTENT -->
+            </section>
+            <footer>
+                GunGame AMXX 3++ · 3.0.0-rc3
+            </footer>
+        </main>
+    </body>
+</html>
