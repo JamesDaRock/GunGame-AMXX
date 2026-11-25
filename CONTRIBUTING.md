@@ -94,7 +94,21 @@ Do not disclose vulnerabilities publicly in issues or discussions. Contact a mai
 
 ## 16. Copyright and licensing
 
-Preserve original copyright, author and upstream notices. Submit only material you have the necessary rights to contribute. Disclose third-party material and its applicable license or permission. See [LICENSE-STATUS.md](LICENSE-STATUS.md) and [CREDITS.md](CREDITS.md). This document does not establish a blanket project license, contributor license agreement or copyright assignment. Contributions with unresolved rights must not be integrated until clarified.
+Original contributions to GunGame AMXX 3++ – pur3gaming Edition are licensed under the GNU General Public License, version 2 or any later version (GPL-2.0-or-later).
+
+By submitting a contribution, you confirm that:
+
+- You have the necessary rights to submit the contribution.
+- Your original contributions are provided under GPL-2.0-or-later.
+- Existing copyright, author and upstream notices are preserved.
+- Included third-party material and its applicable license are disclosed.
+- All applicable third-party license conditions are respected.
+
+Third-party components retain their respective licenses and copyright notices.
+
+Submitting a contribution does not constitute a transfer of copyright ownership.
+
+See [LICENSE](LICENSE), [LICENSE-STATUS.md](LICENSE-STATUS.md) and [CREDITS.md](CREDITS.md) for additional information.
 
 ---
 
@@ -192,4 +206,18 @@ Veröffentliche Sicherheitslücken nicht in öffentlichen Issues oder Discussion
 
 ## 16. Urheberrecht und Lizenzierung
 
-Erhalte ursprüngliche Copyright-, Entwickler- und Upstream-Hinweise. Reiche ausschließlich Material ein, für das du die erforderlichen Beitragsrechte besitzt. Kennzeichne Drittmaterial und die zugehörige Lizenz oder Erlaubnis. Siehe [LICENSE-STATUS.md](LICENSE-STATUS.md) und [CREDITS.md](CREDITS.md). Dieses Dokument legt keine pauschale Projektlizenz, Contributor License Agreement oder Urheberrechtsübertragung fest. Beiträge mit ungeklärten Rechten dürfen erst nach Klärung übernommen werden.
+Eigenständige Beiträge zu GunGame AMXX 3++ – pur3gaming Edition werden unter der GNU General Public License, Version 2 oder jeder späteren Version (GPL-2.0-or-later), lizenziert.
+
+Mit dem Einreichen eines Beitrags bestätigst du, dass:
+
+- Du über die erforderlichen Rechte zur Einreichung des Beitrags verfügst.
+- Deine eigenständigen Beiträge unter GPL-2.0-or-later bereitgestellt werden.
+- Bestehende Urheberrechts-, Entwickler- und Upstream-Hinweise erhalten bleiben.
+- Enthaltene Drittanbieterinhalte und deren jeweilige Lizenzen offengelegt werden.
+- Alle geltenden Lizenzbedingungen von Drittanbietern eingehalten werden.
+
+Drittanbieterkomponenten behalten ihre jeweiligen Lizenzen und Urheberrechtshinweise.
+
+Das Einreichen eines Beitrags stellt keine Übertragung der Urheberrechte dar.
+
+Weitere Informationen findest du unter [LICENSE](LICENSE), [LICENSE-STATUS.md](LICENSE-STATUS.md) und [CREDITS.md](CREDITS.md).

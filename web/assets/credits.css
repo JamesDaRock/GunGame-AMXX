@@ -1,3 +1,12 @@
+/**
+ * Copyright (C) 2026 Pascal 'JamesDaRock' Neumann
+ *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
+ * This file is part of GunGame AMXX 3++ - pur3gaming Edition.
+ *
+ * See LICENSE for the full license text.
+ */
 /* Credits page: shared dashboard palette, independent responsive layout. */
 .credits-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; margin-bottom:20px; }
 .credits-grid .panel { margin:0; }

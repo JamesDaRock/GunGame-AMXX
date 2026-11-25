@@ -45,6 +45,38 @@
 // ReHLDS, ReGameDLL and YaPB.
 // All original copyright notices and applicable license terms are retained.
 // ============================================================================
+// COPYRIGHT AND LICENSING
+// ============================================================================
+//
+// GunGame AMXX 3++ - pur3gaming Edition
+//
+// Original GunGame AMXX 2.13c by Avalanche.
+//
+// Copyright (C) 2026 Pascal 'JamesDaRock' Neumann
+// for the pur3gaming Edition contributions and modifications.
+//
+// License: GNU General Public License, version 2 or any later version.
+// License identifier: GPL-2.0-or-later
+//
+// The pur3gaming Edition contributions are free software: you can
+// redistribute them and/or modify them under the terms of the GNU
+// General Public License as published by the Free Software Foundation,
+// either version 2 of the License, or (at your option) any later version.
+//
+// This software is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+// See the GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this software. If not, see https://www.gnu.org/licenses/.
+//
+// See LICENSE for the complete license text.
+//
+// All original copyright notices, contributor acknowledgements
+// and applicable third-party license terms remain unaffected.
+//
+// ============================================================================
 
 // Both statistics backends are compiled into this plugin.
 

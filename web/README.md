@@ -1,6 +1,6 @@
-# GunGame AMXX 3++ — Web dashboard
+# GunGame AMXX 3++ — Web Dashboard
 
-Originally developed by Avalanche; maintained by JamesDaRock.
+Based on the original GunGame AMXX project by Avalanche; independently developed and maintained for the pur3gaming Edition by JamesDaRock.
 
 ## Installation / Einrichtung
 
@@ -14,6 +14,53 @@ Originally developed by Avalanche; maintained by JamesDaRock.
 
 The default timezone is UTC. The example domain is not emitted as a canonical URL. The social preview is included. Bootstrap Icons CSS and WOFF/WOFF2 fonts are included.
 
+## License
+
+The independently developed GunGame AMXX 3++ web dashboard is licensed under the GNU General Public License, version 2 or any later version.
+
+**SPDX license identifier:** GPL-2.0-or-later
+
+Copyright (C) 2026 Pascal 'JamesDaRock' Neumann.
+
+The license applies to original project-specific PHP, CSS and JavaScript code, including language files and the example configuration.
+
+See [LICENSE](LICENSE) for the complete license text.
+
+## Third-Party Components
+
+| Component | License |
+|---|---|
+| Original web dashboard code | GPL-2.0-or-later |
+| GameQ | LGPL-3.0-or-later |
+| Bootstrap Icons 1.11.2 | MIT |
+
+Third-party components retain their respective licenses and copyright notices.
+
+The GPL-2.0-or-later license permits the use of a later GPL version where required for compatibility with GameQ.
+
+Additional information:
+
+- [Third-Party Notices](THIRD-PARTY-NOTICES.md)
+- [Third-Party License Texts](licenses/)
+
 ## Distribution
 
-See THIRD-PARTY-NOTICES.md and licenses/. The original GunGame and CSDM license obligations and upstream notices must still be verified before public distribution. This web package does not contain the game-server plugin or CSDM binaries. Map artwork and game logos are present in this preparation tree; redistribution rights must be verified before publication.
+The web dashboard can be distributed separately from the GunGame AMXX game-server plugin.
+
+This web package does not contain the game-server plugin or CSDM binaries.
+
+When redistributing the web dashboard:
+
+- Comply with the applicable GPL and third-party license conditions.
+- Include all applicable license texts and copyright notices.
+- Preserve the original contributor acknowledgements.
+- Exclude production configuration files and generated runtime cache data.
+- Include only third-party assets for which the necessary redistribution rights exist.
+
+## Project Repository
+
+https://github.com/JamesDaRock/GunGame-AMXX
+
+GunGame AMXX 3++ – pur3gaming Edition is an independent continuation of the original GunGame AMXX project and is not an official Avalanche release.
+
+Counter-Strike and Counter-Strike: Condition Zero are games developed by Valve. All respective trademarks and third-party rights remain with their original owners.

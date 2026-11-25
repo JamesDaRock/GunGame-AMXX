@@ -1,4 +1,14 @@
 <?php
+/**
+ * Copyright (C) 2026 Pascal 'JamesDaRock' Neumann
+ *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
+ * This file is part of GunGame AMXX 3++ - pur3gaming Edition.
+ *
+ * See LICENSE for the full license text.
+ */
+
 return [
     'statistics' => 'Statistiken',
     't0' => 'Übersicht',
@@ -60,7 +70,7 @@ return [
     't56' => 'Nach',
     't57' => 'Uhr',
     't58' => 'Powered by GunGame AMXX 3++',
-    't59' => 'GunGame AMXX 3++ Statistiken f�r Counter-Strike 1.6 und Condition Zero. Entdecke Ranglisten, Siege, Punkte, Siegesserien und Live-Gameserver.',
+    't59' => 'GunGame AMXX 3++ Statistiken für Counter-Strike 1.6 und Condition Zero. Entdecke Ranglisten, Siege, Punkte, Siegesserien und Live-Gameserver.',
     'servers_title' => 'Gameserver',
     'servers_loading' => 'Serverstatus wird geladen…',
     'servers_online' => 'Online',

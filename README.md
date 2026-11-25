@@ -97,4 +97,36 @@ Do not publish database credentials, private server configuration or security vu
 
 This is an independent continuation, not an official Avalanche release.
 
-See [credits](CREDITS.md) and [licensing status](LICENSE-STATUS.md) for attribution and licensing information. No blanket project license is asserted here.
+### Project license
+
+The original contributions and modifications of GunGame AMXX 3++ – pur3gaming Edition are licensed under the GNU General Public License, version 2 or any later version.
+
+**SPDX license identifier:** GPL-2.0-or-later
+
+Copyright (C) 2026 Pascal 'JamesDaRock' Neumann.
+
+### Component licensing
+
+| Component | License |
+|---|---|
+| pur3gaming Edition contributions | GPL-2.0-or-later |
+| Original PHP web interface | GPL-2.0-or-later |
+| Original CSS and JavaScript | GPL-2.0-or-later |
+| CSDM 2.1.3d | GPL-2.0-or-later |
+| GameQ | LGPL-3.0-or-later |
+| Bootstrap Icons 1.11.2 | MIT |
+
+Third-party components retain their respective licenses and copyright notices.
+
+### Licensing documentation
+
+- [GNU General Public License version 2](LICENSE)
+- [Project Licensing](LICENSE-STATUS.md)
+- [Additional License Texts](licenses/)
+- [Web Interface License](web/LICENSE)
+- [Third-Party Notices](web/THIRD-PARTY-NOTICES.md)
+- [Credits and Acknowledgements](CREDITS.md)
+
+All original copyright notices, contributor acknowledgements and applicable license terms must be preserved.
+
+Counter-Strike and Counter-Strike: Condition Zero are games developed by Valve. All respective trademarks and third-party rights remain with their original owners.
