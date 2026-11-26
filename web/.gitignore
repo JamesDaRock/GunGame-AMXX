@@ -1,0 +1,4 @@
+# Local installation configuration and generated runtime data.
+/config.php
+/cache/*
+!/cache/.htaccess

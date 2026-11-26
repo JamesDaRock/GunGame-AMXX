@@ -1,0 +1,68 @@
+<?php
+/**
+ * Copyright (C) 2026 Pascal 'JamesDaRock' Neumann
+ *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
+ * This file is part of GunGame AMXX 3++ - pur3gaming Edition.
+ *
+ * See LICENSE for the full license text.
+ */
+
+/**
+ * Classic teamplay winner presentation.
+ * The controller supplies validated snapshot data and language helpers.
+ * Keep this template independent of portal CSS and JavaScript for the game browser.
+ */
+// Presentation files are loaded only by the central MOTD controller.
+if (!defined('GUNGAME_MOTD_RENDER')) {
+    http_response_code(404);
+    exit;
+}
+
+
+/** Presentation-specific formatting. */
+$teamplay = true;
+$statsMode = $error ? 0 : (int) $meta['team'];
+$color = static function ($row): string {
+    return (int) ($row['team'] ?? 0) === 1 ? '#ff3333' : ((int) ($row['team'] ?? 0) === 2 ? '#78b9df' : '#eeeeee');
+};
+$winnerColor = $color(['team' => $meta['current_streak'] ?? 0]);
+$ordinal = static function ($n): string {
+    $n = (int) $n;
+    if ($n % 100 >= 11 && $n % 100 <= 13) return $n . 'th';
+    return $n . ([1=>'st',2=>'nd',3=>'rd'][$n % 10] ?? 'th');
+};
+$winnerName = ((int) ($meta['current_streak'] ?? 0) === 1 ? t('Terroristen','Terrorists') : t('Counter-Terroristen','Counter-Terrorists'));
+?>
+<!DOCTYPE html>
+<html lang="<?= $de ? 'de' : 'en' ?>">
+    <head><meta charset="UTF-8"><title><?= h($motdTitle) ?></title>
+        <style>
+body{background:#000;color:#eee;font:12px Georgia,"Times New Roman",serif;text-align:center;margin:8px;letter-spacing:.5px}
+h1{font-size:32px;font-weight:normal;color:#00cc00;margin:0 0 28px}
+.winner{width:80%;margin:auto;border-top:1px solid <?= $winnerColor ?>;border-bottom:1px solid <?= $winnerColor ?>;color:<?= $winnerColor ?>;font-size:23px;line-height:21px;letter-spacing:1px}
+p{margin:8px 0;line-height:1.05}.subtitle{margin:0 0 10px}.accent{color:#00cc00}.next{margin-top:10px}
+        </style>
+    </head>
+    <body>
+        <h1><?= h($motdTitle) ?></h1>
+<?php if ($error): ?><p><?= h($error) ?></p><?php else: ?>
+<div class="winner"><?= h($winnerName) ?></div>
+        <p class="subtitle"><?= $teamplay ? t('ist das Gewinnerteam!','is the winning team!') : t('ist der Gewinner!','is the winner!') ?></p>
+<?php if ($loser): ?><p><?= t('Der letzte','The final') ?> <span class="accent"><?= h($winner['weapon']) ?></span> <?= t('Kill wurde gemacht von','kill was made by') ?> <span style="color:<?= $color($winner) ?>"><?= h($winner['name']) ?></span> <?= t('gegen','against') ?> <span style="color:<?= $color($loser) ?>"><?= h($loser['name']) ?></span>.</p><?php endif; ?>
+<?php if ($statsMode > 0): ?>
+<p><?= t('Das ist','This is') ?> <span style="color:<?= $winnerColor ?>"><?= h($winner['name']) ?></span>'s <span class="accent"><?= h($ordinal($winner['wins'])) ?></span> <?= t('Teamsieg','team win') ?><?php if ($statsMode === 2): ?>, <?= t('mit nun insgesamt','with a total of') ?> <span class="accent"><?= h($winner['points']) ?></span> <?= t('Punkten','points') ?><?php endif; ?>,<br><?= t('und sein','and their') ?> <span class="accent"><?= h($ordinal($winner['current_streak'])) ?></span> <?= t('Sieg in Folge (sein Rekord:','win in a row (record:') ?> <span class="accent"><?= h($winner['record_streak']) ?></span> <?= t('in Folge).','in a row).') ?></p>
+<?php if ($me): ?>
+<?php if ((int) $meta['wins'] !== 0): $total = (int) $me['teamtime_winning'] + (int) $me['teamtime_losing']; ?>
+<p><?= t('Spielzeit im Gewinnerteam:','Time on winning team:') ?> <span class="accent"><?= $total > 0 ? round(100 * (int) $me['teamtime_winning'] / $total) : 0 ?>%</span></p>
+<?php endif; ?>
+<?php if ($statsMode === 2): ?><p><?= t('Du erhältst','You earned') ?> <span class="accent"><?= h($me['new_points']) ?></span> <?= t('Punkte, und hast nun insgesamt','points, and now have') ?> <span class="accent"><?= h($me['points']) ?></span> <?= t('Punkte und','points and') ?> <span class="accent"><?= h($me['wins']) ?></span> <?= t('Teamsiege!','team wins!') ?></p>
+<?php else: ?><p><?= t('Du hast insgesamt','You have a total of') ?> <span class="accent"><?= h($me['wins']) ?></span> <?= t('Teamsiege.','team wins.') ?></p><?php endif; ?>
+<?php if ((int) $me['current_streak'] > 0): ?><p><?= t('Das ist dein','This is your') ?> <span class="accent"><?= h($ordinal($me['current_streak'])) ?></span> <?= t('Sieg in Folge (dein Rekord:','win in a row (your record:') ?> <span class="accent"><?= h($me['record_streak']) ?></span> <?= t('in Folge).','in a row).') ?></p><?php endif; ?>
+<?php endif; ?>
+<?php if ($champion): ?><p><?= t('Die Allzeit-Rekord Serie,','The all-time record streak,') ?> <span class="accent"><?= h($champion['streak']) ?></span> <?= t('Siege in Folge, wurde gestellt von','wins in a row, was set by') ?> <span class="accent"><?= h($champion['name']) ?></span>.</p><?php endif; ?>
+<?php endif; ?>
+<p class="next"><?= t('Die nächste Map wird','The next map will be') ?> <span class="accent"><?= h($meta['name']) ?></span><?= t(' sein.','.') ?></p>
+<?php endif; ?></body>
+    </html>

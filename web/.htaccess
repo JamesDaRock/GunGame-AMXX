@@ -3,3 +3,11 @@ DirectoryIndex index.php
 <FilesMatch "^(config\.php|config\.example\.php|README\.md)$">
     Require all denied
 </FilesMatch>
+
+# Optional pretty URLs. PHP controls whether these routes are enabled.
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^ index.php [END]
+</IfModule>
