@@ -54,6 +54,15 @@ try {
     } catch (Throwable $e) {
         error_log('GunGame previous match: ' . $e->getMessage());
     }
+    // Resolve map assets after reading the live cache, so image updates never
+    // require invalidating or refreshing the gameserver query cache.
+    require_once dirname(__DIR__) . '/includes/assets.php';
+    foreach ($data['servers'] as &$card) {
+        foreach (['image' => 'map', 'previous_image' => 'previous_map', 'next_image' => 'next_map'] as $field => $mapField) {
+            $card[$field] = asset_url(ggMapImage($card['game'], $card[$mapField] ?? ''));
+        }
+    }
+    unset($card);
     // Supply cache age without relying on the visitor's wall clock.
     $data['age'] = max(0, time() - (int)$data['updated']);
     unset($data['key']);

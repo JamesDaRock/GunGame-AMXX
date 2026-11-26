@@ -88,6 +88,56 @@ function ggStatsLinks(array $rules, array $configured = []): array
     return $links;
 }
 
+/** Allowlist public GunGame rules; absent or invalid values remain unknown. */
+function ggPublicRules(array $rules): array
+{
+    $rules = array_change_key_case($rules, CASE_LOWER);
+    $public = [];
+    foreach ([
+        'gg_enabled',
+        'gg_map_iterations',
+        'gg_ignore_bots',
+        'gg_stats_mode',
+        'gg_stats_split',
+        'gg_stats_winbonus',
+        'gg_dm',
+        'gg_dm_sp_time',
+        'gg_dm_sp_mode',
+        'gg_dm_spawn_random',
+        'gg_dm_spawn_delay',
+        'gg_block_objectives',
+        'gg_teamplay',
+        'gg_teamplay_knife_mod',
+        'gg_teamplay_nade_mod',
+        'gg_teamplay_timeratio',
+        'gg_ff_auto',
+        'gg_max_lvl',
+        'gg_triple_on',
+        'gg_turbo',
+        'gg_knife_pro',
+        'gg_knife_elite',
+        'gg_suicide_penalty',
+        'gg_pickup_others',
+        'gg_handicap_on',
+        'gg_top10_handicap',
+        'gg_warmup_timer_setting',
+        'gg_kills_per_lvl',
+        'gg_kills_botmod',
+        'gg_give_armor',
+        'gg_give_helmet',
+        'gg_tk_penalty',
+        'gg_awp_oneshot',
+        'gg_bots_skipnade',
+        'gg_bots_knifeable',
+    ] as $key) {
+        $value = $rules[$key] ?? null;
+        if (is_scalar($value) && preg_match('/^-?\d{1,9}(?:\.\d{1,9})?$/D', trim((string)$value))) {
+            $public[$key] = trim((string)$value);
+        }
+    }
+    return $public;
+}
+
 function ggQuery(array $targets, array $settings, array $previous = []): array
 {
     require_once dirname(__DIR__) . '/vendor/GameQ/Autoloader.php';
@@ -119,7 +169,23 @@ function ggQuery(array $targets, array $settings, array $previous = []): array
         }
         $players = max(0, (int)($r['num_players'] ?? 0));
         $bots = isset($r['num_bots']) ? max(0, min($players, (int)$r['num_bots'])) : null;
+        // Expose only public A2S player fields, never internal query metadata.
+        $connectedPlayers = null;
+        if ($online && !empty($r['players']) && is_array($r['players'])) {
+            $connectedPlayers = [];
+            foreach ($r['players'] as $player) {
+                $connectedPlayers[] = [
+                    'name' => (string)($player['name'] ?? $player['gq_name'] ?? ''),
+                    'score' => isset($player['score']) ? (int)$player['score'] : null,
+                    'seconds' => isset($player['time']) && is_numeric($player['time']) ? max(0, (int)$player['time']) : null,
+                ];
+            }
+        } elseif ($online && $players === 0) {
+            $connectedPlayers = [];
+        }
         $cards[] = [
+            'connected_players' => $connectedPlayers,
+            'gungame_rules' => $online ? ggPublicRules($r) : [],
             'address' => $address, 'online' => $online,
             'stats_links' => ggStatsLinks($online ? $r : [], $settings['server_links'][$address] ?? []),
             'name' => $online ? (string)$r['hostname'] : $address,
@@ -149,7 +215,7 @@ function ggCached(array $targets, array $settings): array
         return is_array($data) && ($data['key'] ?? '') === $key ? $data : null;
     };
     $old = $read();
-    if ($old && time() - $old['updated'] < $ttl) {
+    if ($old && time() - $old['updated'] < $ttl && !array_filter($old['servers'], static fn($card) => !array_key_exists('connected_players', $card) || !array_key_exists('gungame_rules', $card))) {
         return $old;
     }
     $lock = fopen($file . '.lock', 'c');
@@ -161,7 +227,7 @@ function ggCached(array $targets, array $settings): array
             return $old ?? ['updated' => 0, 'servers' => [], 'pending' => true];
         }
         $old = $read();
-        if ($old && time() - $old['updated'] < $ttl) {
+        if ($old && time() - $old['updated'] < $ttl && !array_filter($old['servers'], static fn($card) => !array_key_exists('connected_players', $card) || !array_key_exists('gungame_rules', $card))) {
             return $old;
         }
         // Preserve observed map history even when the discovered server set changes.
